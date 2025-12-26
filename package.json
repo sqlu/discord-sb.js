@@ -44,12 +44,12 @@
     "client",
     "discordapp"
   ],
-  "author": "aiko-chan-ai",
+  "author": "Snayz",
   "license": "GNU General Public License v3.0",
   "bugs": {
-    "url": "https://github.com/aiko-chan-ai/discord-selfbot.js/issues"
+    "url": "https://github.com/sqlu/discord-selfbot.js/issues"
   },
-  "homepage": "https://github.com/aiko-chan-ai/discord-selfbot.js#readme",
+  "homepage": "https://github.com/sqlu/discord-selfbot.js#readme",
   "dependencies": {
     "@discordjs/builders": "^1.6.3",
     "@discordjs/collection": "^2.1.1",
