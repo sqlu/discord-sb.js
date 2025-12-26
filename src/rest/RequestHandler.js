@@ -75,11 +75,36 @@ class RequestHandler {
   }
 
   get limited() {
-    return this.globalLimited || this.localLimited;
+    return this._getActiveRateLimit() !== null;
   }
 
   get _inactive() {
     return this.queue.remaining === 0 && !this.limited;
+  }
+
+  _getActiveRateLimit(now = Date.now()) {
+    if (this.manager.globalRemaining <= 0 && now < this.manager.globalReset) {
+      const timeout = this.manager.globalReset + this.manager.client.options.restTimeOffset - now;
+      return { isGlobal: true, limit: this.manager.globalLimit, timeout };
+    }
+
+    if (this.remaining <= 0 && now < this.reset) {
+      const timeout = this.reset + this.manager.client.options.restTimeOffset - now;
+      return { isGlobal: false, limit: this.limit, timeout };
+    }
+
+    return null;
+  }
+
+  _getDelayPromise(isGlobal, timeout) {
+    const delay = Math.max(timeout, 0);
+    if (isGlobal) {
+      if (!this.manager.globalDelay) {
+        this.manager.globalDelay = this.globalDelayFor(delay);
+      }
+      return this.manager.globalDelay;
+    }
+    return sleep(delay);
   }
 
   globalDelayFor(ms) {
@@ -116,32 +141,29 @@ class RequestHandler {
   }
 
   async execute(request, captchaKey, captchaToken) {
+    const hasRateLimitListener = this.manager.client.listenerCount(RATE_LIMIT) > 0;
+    const hasApiRequestListener = this.manager.client.listenerCount(API_REQUEST) > 0;
+    const hasApiResponseListener = this.manager.client.listenerCount(API_RESPONSE) > 0;
+    const invalidRequestInterval = this.manager.client.options.invalidRequestWarningInterval;
+    const hasInvalidRequestListener =
+      this.manager.client.listenerCount(INVALID_REQUEST_WARNING) > 0 && invalidRequestInterval > 0;
+
     /*
      * After calculations have been done, pre-emptively stop further requests
      * Potentially loop until this task can run if e.g. the global rate limit is hit twice
      */
-    while (this.limited) {
-      const isGlobal = this.globalLimited;
-      let limit, timeout, delayPromise;
+    for (let rateLimitState = this._getActiveRateLimit(); rateLimitState; rateLimitState = this._getActiveRateLimit()) {
+      const { isGlobal, limit, timeout } = rateLimitState;
+      const safeTimeout = Math.max(timeout, 0);
 
-      if (isGlobal) {
-        // Set the variables based on the global rate limit
-        limit = this.manager.globalLimit;
-        timeout = this.manager.globalReset + this.manager.client.options.restTimeOffset - Date.now();
-      } else {
-        // Set the variables based on the route-specific rate limit
-        limit = this.limit;
-        timeout = this.reset + this.manager.client.options.restTimeOffset - Date.now();
-      }
-
-      if (this.manager.client.listenerCount(RATE_LIMIT)) {
+      if (hasRateLimitListener) {
         /**
          * Emitted when the client hits a rate limit while making a request
          * @event BaseClient#rateLimit
          * @param {RateLimitData} rateLimitData Object containing the rate limit info
          */
         this.manager.client.emit(RATE_LIMIT, {
-          timeout,
+          timeout: safeTimeout,
           limit,
           method: request.method,
           path: request.path,
@@ -150,27 +172,19 @@ class RequestHandler {
         });
       }
 
-      if (isGlobal) {
-        // If this is the first task to reach the global timeout, set the global delay
-        if (!this.manager.globalDelay) {
-          // The global delay function should clear the global delay state when it is resolved
-          this.manager.globalDelay = this.globalDelayFor(timeout);
-        }
-        delayPromise = this.manager.globalDelay;
-      } else {
-        delayPromise = sleep(timeout);
-      }
+      const delayPromise = this._getDelayPromise(isGlobal, safeTimeout);
 
       // Determine whether a RateLimitError should be thrown
-      await this.onRateLimit(request, limit, timeout, isGlobal); // eslint-disable-line no-await-in-loop
+      await this.onRateLimit(request, limit, safeTimeout, isGlobal); // eslint-disable-line no-await-in-loop
 
       // Wait for the timeout to expire in order to avoid an actual 429
       await delayPromise; // eslint-disable-line no-await-in-loop
     }
 
     // As the request goes out, update the global usage information
-    if (!this.manager.globalReset || this.manager.globalReset < Date.now()) {
-      this.manager.globalReset = Date.now() + 1_000;
+    const now = Date.now();
+    if (!this.manager.globalReset || this.manager.globalReset < now) {
+      this.manager.globalReset = now + 1_000;
       this.manager.globalRemaining = this.manager.globalLimit;
     }
     this.manager.globalRemaining--;
@@ -185,7 +199,7 @@ class RequestHandler {
      * @property {number} retries The number of times this request has been attempted
      */
 
-    if (this.manager.client.listenerCount(API_REQUEST)) {
+    if (hasApiRequestListener) {
       /**
        * Emitted before every API request.
        * This event can emit several times for the same request, e.g. when hitting a rate limit.
@@ -217,7 +231,7 @@ class RequestHandler {
       return this.execute(request);
     }
 
-    if (this.manager.client.listenerCount(API_RESPONSE)) {
+    if (hasApiResponseListener) {
       /**
        * Emitted after every API request has received a response.
        * This event does not necessarily correlate to completion of the request, e.g. when hitting a rate limit.
@@ -278,16 +292,14 @@ class RequestHandler {
 
     // Count the invalid requests
     if (res.status === 401 || res.status === 403 || res.status === 429) {
-      if (!invalidCountResetTime || invalidCountResetTime < Date.now()) {
-        invalidCountResetTime = Date.now() + 1_000 * 60 * 10;
+      const invalidNow = Date.now();
+      if (!invalidCountResetTime || invalidCountResetTime < invalidNow) {
+        invalidCountResetTime = invalidNow + 1_000 * 60 * 10;
         invalidCount = 0;
       }
       invalidCount++;
 
-      const emitInvalid =
-        this.manager.client.listenerCount(INVALID_REQUEST_WARNING) &&
-        this.manager.client.options.invalidRequestWarningInterval > 0 &&
-        invalidCount % this.manager.client.options.invalidRequestWarningInterval === 0;
+      const emitInvalid = hasInvalidRequestListener && invalidCount % invalidRequestInterval === 0;
       if (emitInvalid) {
         /**
          * @typedef {Object} InvalidRequestWarningData
@@ -303,7 +315,7 @@ class RequestHandler {
          */
         this.manager.client.emit(INVALID_REQUEST_WARNING, {
           count: invalidCount,
-          remainingTime: invalidCountResetTime - Date.now(),
+          remainingTime: invalidCountResetTime - invalidNow,
         });
       }
     }
@@ -318,17 +330,16 @@ class RequestHandler {
     if (res.status >= 400 && res.status < 500) {
       // Handle ratelimited requests
       if (res.status === 429) {
-        const isGlobal = this.globalLimited;
-        let limit, timeout;
-        if (isGlobal) {
-          // Set the variables based on the global rate limit
-          limit = this.manager.globalLimit;
-          timeout = this.manager.globalReset + this.manager.client.options.restTimeOffset - Date.now();
-        } else {
-          // Set the variables based on the route-specific rate limit
-          limit = this.limit;
-          timeout = this.reset + this.manager.client.options.restTimeOffset - Date.now();
-        }
+        const rateLimitNow = Date.now();
+        const rateLimitState = this._getActiveRateLimit(rateLimitNow);
+        const isGlobal = rateLimitState?.isGlobal ?? this.globalLimited;
+        const limit = rateLimitState?.limit ?? (isGlobal ? this.manager.globalLimit : this.limit);
+        const computedTimeout =
+          rateLimitState?.timeout ??
+          (isGlobal
+            ? this.manager.globalReset + this.manager.client.options.restTimeOffset - rateLimitNow
+            : this.reset + this.manager.client.options.restTimeOffset - rateLimitNow);
+        const safeTimeout = Math.max(computedTimeout, 0);
 
         this.manager.client.emit(
           DEBUG,
@@ -338,11 +349,11 @@ class RequestHandler {
     Path    : ${request.path}
     Route   : ${request.route}
     Limit   : ${limit}
-    Timeout : ${timeout}ms
+    Timeout : ${safeTimeout}ms
     Sublimit: ${sublimitTimeout ? `${sublimitTimeout}ms` : 'None'}`,
         );
 
-        await this.onRateLimit(request, limit, timeout, isGlobal);
+        await this.onRateLimit(request, limit, safeTimeout, isGlobal);
 
         // If caused by a sublimit, wait it out here so other requests on the route can be handled
         if (sublimitTimeout) {

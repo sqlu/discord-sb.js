@@ -33,29 +33,22 @@ class Sweepers {
      * A record of interval timeout that is used to sweep the indicated items, or null if not being swept
      * @type {Object<SweeperKey, ?Timeout>}
      */
-    this.intervals = Object.fromEntries(SweeperKeys.map(key => [key, null]));
+    this.intervals = {};
+    for (const key of SweeperKeys) {
+      this.intervals[key] = null;
+    }
+
+    /**
+     * Cached validated options to avoid recalculating filters
+     * @type {Map<string, Object>}
+     * @private
+     */
+    this._validatedOptions = new Map();
 
     for (const key of SweeperKeys) {
       if (!(key in options)) continue;
 
-      this._validateProperties(key);
-
-      const clonedOptions = { ...this.options[key] };
-
-      // Handle cases that have a "lifetime"
-      if (!('filter' in clonedOptions)) {
-        switch (key) {
-          case 'invites':
-            clonedOptions.filter = this.constructor.expiredInviteSweepFilter(clonedOptions.lifetime);
-            break;
-          case 'messages':
-            clonedOptions.filter = this.constructor.outdatedMessageSweepFilter(clonedOptions.lifetime);
-            break;
-          case 'threads':
-            clonedOptions.filter = this.constructor.archivedThreadSweepFilter(clonedOptions.lifetime);
-        }
-      }
-
+      const clonedOptions = this._getValidatedOptions(key);
       this._initInterval(key, `sweep${key[0].toUpperCase()}${key.slice(1)}`, clonedOptions);
     }
   }
@@ -124,6 +117,14 @@ class Sweepers {
     return this._sweepGuildDirectProp('members', filter, { outputName: 'guild members' }).items;
   }
 
+  _getTextChannels() {
+    const textChannels = [];
+    for (const channel of this.client.channels.cache.values()) {
+      if (channel.isText()) textChannels.push(channel);
+    }
+    return textChannels;
+  }
+
   /**
    * Sweeps all text-based channels' messages and removes the ones which are indicated by the filter.
    * @param {Function} filter The function used to determine which messages will be removed from the caches.
@@ -142,15 +143,13 @@ class Sweepers {
     if (typeof filter !== 'function') {
       throw new TypeError('INVALID_TYPE', 'filter', 'function');
     }
-    let channels = 0;
+    const textChannels = this._getTextChannels();
     let messages = 0;
 
-    for (const channel of this.client.channels.cache.values()) {
-      if (!channel.isText()) continue;
-
-      channels++;
+    for (const channel of textChannels) {
       messages += channel.messages.cache.sweep(filter);
     }
+    const channels = textChannels.length;
     this.client.emit(Events.CACHE_SWEEP, `Swept ${messages} messages in ${channels} text-based channels.`);
     return messages;
   }
@@ -173,19 +172,19 @@ class Sweepers {
     if (typeof filter !== 'function') {
       throw new TypeError('INVALID_TYPE', 'filter', 'function');
     }
-    let channels = 0;
+    const textChannels = this._getTextChannels();
     let messages = 0;
     let reactions = 0;
 
-    for (const channel of this.client.channels.cache.values()) {
-      if (!channel.isText()) continue;
-      channels++;
-
+    for (const channel of textChannels) {
       for (const message of channel.messages.cache.values()) {
+        const reactionCache = message.reactions?.cache;
+        if (!reactionCache?.size) continue;
         messages++;
-        reactions += message.reactions.cache.sweep(filter);
+        reactions += reactionCache.sweep(filter);
       }
     }
+    const channels = textChannels.length;
     this.client.emit(
       Events.CACHE_SWEEP,
       `Swept ${reactions} reactions on ${messages} messages in ${channels} text-based channels.`,
@@ -389,6 +388,34 @@ class Sweepers {
    * @property {string} [outputName] A name to output in the client event if it should differ from the key
    * @private
    */
+
+  _getValidatedOptions(key) {
+    if (this._validatedOptions.has(key)) {
+      return this._validatedOptions.get(key);
+    }
+
+    this._validateProperties(key);
+    const clonedOptions = { ...this.options[key] };
+
+    if (!('filter' in clonedOptions)) {
+      switch (key) {
+        case 'invites':
+          clonedOptions.filter = this.constructor.expiredInviteSweepFilter(clonedOptions.lifetime);
+          break;
+        case 'messages':
+          clonedOptions.filter = this.constructor.outdatedMessageSweepFilter(clonedOptions.lifetime);
+          break;
+        case 'threads':
+          clonedOptions.filter = this.constructor.archivedThreadSweepFilter(clonedOptions.lifetime);
+          break;
+        default:
+          break;
+      }
+    }
+
+    this._validatedOptions.set(key, clonedOptions);
+    return clonedOptions;
+  }
 
   /**
    * Sweep a direct sub property of all guilds

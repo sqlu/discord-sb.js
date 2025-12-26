@@ -1670,16 +1670,19 @@ class Guild extends AnonymousGuild {
    * guild.markRead([
    *   { channel_id: '123456789012345678', message_id: '987654321098765432' }
    * ]);
-   */
+  */
   async markRead(readStates = []) {
     // If no readStates provided, get all channels in guild
     if (readStates.length === 0) {
-      const channels = this.channels.cache.filter(c => c.isTextBased());
-      readStates = channels.map(channel => ({
-        channel_id: channel.id,
-        message_id: channel.lastMessageId || '0',
-        read_state_type: 0,
-      }));
+      readStates = [];
+      for (const channel of this.channels.cache.values()) {
+        if (!channel.isTextBased()) continue;
+        readStates.push({
+          channel_id: channel.id,
+          message_id: channel.lastMessageId || '0',
+          read_state_type: 0,
+        });
+      }
     }
 
     const data = await this.client.api['read-states']['ack-bulk'].post({

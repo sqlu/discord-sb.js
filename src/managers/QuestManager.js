@@ -131,7 +131,11 @@ class QuestManager extends BaseManager {
    * @returns {Quest[]}
    */
   getExpired(date = new Date()) {
-    return this.list().filter(quest => quest.isExpired(date));
+    const expired = [];
+    for (const quest of this.cache.values()) {
+      if (quest.isExpired(date)) expired.push(quest);
+    }
+    return expired;
   }
 
   /**
@@ -139,7 +143,11 @@ class QuestManager extends BaseManager {
    * @returns {Quest[]}
    */
   getCompleted() {
-    return this.list().filter(quest => quest.isCompleted());
+    const completed = [];
+    for (const quest of this.cache.values()) {
+      if (quest.isCompleted()) completed.push(quest);
+    }
+    return completed;
   }
 
   /**
@@ -147,7 +155,13 @@ class QuestManager extends BaseManager {
    * @returns {Quest[]}
    */
   getClaimable() {
-    return this.list().filter(quest => quest.isCompleted() && !quest.hasClaimedRewards());
+    const claimable = [];
+    for (const quest of this.cache.values()) {
+      if (quest.isCompleted() && !quest.hasClaimedRewards()) {
+        claimable.push(quest);
+      }
+    }
+    return claimable;
   }
 
   /**
@@ -155,9 +169,13 @@ class QuestManager extends BaseManager {
    * @returns {Quest[]}
    */
   filterQuestsValid() {
-    return this.list().filter(
-      quest => quest.id !== '1412491570820812933' && !quest.isCompleted() && !quest.isExpired(),
-    );
+    const valid = [];
+    for (const quest of this.cache.values()) {
+      if (quest.id !== '1412491570820812933' && !quest.isCompleted() && !quest.isExpired()) {
+        valid.push(quest);
+      }
+    }
+    return valid;
   }
 
   /**

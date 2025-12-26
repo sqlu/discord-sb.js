@@ -142,7 +142,15 @@ class Presence extends Base {
 
   _clone() {
     const clone = Object.assign(Object.create(this), this);
-    clone.activities = this.activities.map(activity => activity._clone());
+    if (!this.activities.length) {
+      clone.activities = this.activities;
+      return clone;
+    }
+    const clonedActivities = [];
+    for (const activity of this.activities) {
+      clonedActivities.push(typeof activity._clone === 'function' ? activity._clone() : activity);
+    }
+    clone.activities = clonedActivities;
     return clone;
   }
 

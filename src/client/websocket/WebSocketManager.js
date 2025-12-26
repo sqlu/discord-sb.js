@@ -79,6 +79,7 @@ class WebSocketManager extends EventEmitter {
      * @name WebSocketManager#packetQueue
      */
     Object.defineProperty(this, 'packetQueue', { value: [] });
+    this._processingQueue = false;
 
     /**
      * The current status of this WebSocketManager
@@ -107,8 +108,11 @@ class WebSocketManager extends EventEmitter {
    * @readonly
    */
   get ping() {
-    const sum = this.shards.reduce((a, b) => a + b.ping, 0);
-    return sum / this.shards.size;
+    let total = 0;
+    for (const shard of this.shards.values()) {
+      total += shard.ping;
+    }
+    return this.shards.size ? total / this.shards.size : 0;
   }
 
   /**
@@ -315,32 +319,11 @@ class WebSocketManager extends EventEmitter {
     if (this.destroyed) return;
     this.debug(`Manager was destroyed. Called by:\n${new Error('MANAGER_DESTROYED').stack}`);
     this.destroyed = true;
-    this.shardQueue.clear();
-    for (const shard of this.shards.values()) shard.destroy({ closeCode: 1_000, reset: true, emit: false, log: false });
+   this.shardQueue.clear();
+   for (const shard of this.shards.values()) shard.destroy({ closeCode: 1_000, reset: true, emit: false, log: false });
   }
 
-  /**
-   * Processes a packet and queues it if this WebSocketManager is not ready.
-   * @param {Object} [packet] The packet to be handled
-   * @param {WebSocketShard} [shard] The shard that will handle this packet
-   * @returns {boolean}
-   * @private
-   */
-  handlePacket(packet, shard) {
-    if (packet && this.status !== Status.READY) {
-      if (!BeforeReadyWhitelist.includes(packet.t)) {
-        this.packetQueue.push({ packet, shard });
-        return false;
-      }
-    }
-
-    if (this.packetQueue.length) {
-      const item = this.packetQueue.shift();
-      setImmediate(() => {
-        this.handlePacket(item.packet, item.shard);
-      }).unref();
-    }
-
+  _dispatchPacket(packet, shard) {
     if (packet && PacketHandlers[packet.t]) {
       PacketHandlers[packet.t](this.client, packet, shard);
     } else if (packet) {
@@ -351,6 +334,43 @@ class WebSocketManager extends EventEmitter {
        * @param {Number} shard The shard that received the packet (Shard 0)
        */
       this.client.emit(Events.UNHANDLED_PACKET, packet, shard);
+    }
+  }
+
+  _schedulePacketQueue() {
+    if (this._processingQueue || this.status !== Status.READY || !this.packetQueue.length) return;
+    this._processingQueue = true;
+    setImmediate(() => {
+      while (this.packetQueue.length && this.status === Status.READY) {
+        const { packet, shard } = this.packetQueue.shift();
+        this._dispatchPacket(packet, shard);
+      }
+      this._processingQueue = false;
+      if (this.packetQueue.length && this.status === Status.READY) {
+        this._schedulePacketQueue();
+      }
+    }).unref();
+  }
+
+  /**
+   * Processes a packet and queues it if this WebSocketManager is not ready.
+   * @param {Object} [packet] The packet to be handled
+   * @param {WebSocketShard} [shard] The shard that will handle this packet
+   * @returns {boolean}
+   * @private
+   */
+  handlePacket(packet, shard) {
+    if (packet && this.status !== Status.READY && !BeforeReadyWhitelist.includes(packet.t)) {
+      this.packetQueue.push({ packet, shard });
+      return false;
+    }
+
+    if (packet) {
+      this._dispatchPacket(packet, shard);
+    }
+
+    if (this.status === Status.READY && this.packetQueue.length) {
+      this._schedulePacketQueue();
     }
 
     return true;

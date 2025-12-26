@@ -40,6 +40,7 @@ const DataResolver = require('../util/DataResolver');
 const Intents = require('../util/Intents');
 const DiscordAuthWebsocket = require('../util/RemoteAuth');
 const Sweepers = require('../util/Sweepers');
+const TOKEN_PREFIX_REGEX = /^(Bot|Bearer)\s*/i;
 
 /**
  * The main hub for interacting with the Discord API, and the starting point for any bot.
@@ -184,6 +185,19 @@ class Client extends BaseClient {
      */
     this.settings = new ClientUserSettingManager(this);
 
+    this._emojiCacheDirty = true;
+    this._emojiManager = null;
+    this._invalidateEmojiCache = () => {
+      this._emojiCacheDirty = true;
+    };
+    this.on(Events.GUILD_CREATE, this._invalidateEmojiCache);
+    this.on(Events.GUILD_DELETE, this._invalidateEmojiCache);
+    this.on(Events.GUILD_EMOJI_CREATE, this._invalidateEmojiCache);
+    this.on(Events.GUILD_EMOJI_DELETE, this._invalidateEmojiCache);
+    this.on(Events.GUILD_EMOJI_UPDATE, this._invalidateEmojiCache);
+    this.on(Events.GUILD_EMOJIS_UPDATE, this._invalidateEmojiCache);
+    this.on(Events.GUILD_UNAVAILABLE, this._invalidateEmojiCache);
+
     Object.defineProperty(this, 'token', { writable: true });
     if (!this.token && 'DISCORD_TOKEN' in process.env) {
       /**
@@ -240,9 +254,20 @@ class Client extends BaseClient {
    * @readonly
    */
   get emojis() {
+    if (this._emojiCacheDirty || !this._emojiManager) {
+      this._emojiManager = this._buildEmojiCache();
+      this._emojiCacheDirty = false;
+    }
+    return this._emojiManager;
+  }
+
+  _buildEmojiCache() {
     const emojis = new BaseGuildEmojiManager(this);
     for (const guild of this.guilds.cache.values()) {
-      if (guild.available) for (const emoji of guild.emojis.cache.values()) emojis.cache.set(emoji.id, emoji);
+      if (!guild.available) continue;
+      for (const emoji of guild.emojis.cache.values()) {
+        emojis.cache.set(emoji.id, emoji);
+      }
     }
     return emojis;
   }
@@ -274,7 +299,7 @@ class Client extends BaseClient {
    */
   async login(token = this.token) {
     if (!token || typeof token !== 'string') throw new Error('TOKEN_INVALID');
-    this.token = token = token.replace(/^(Bot|Bearer)\s*/i, '');
+    this.token = token = token.replace(TOKEN_PREFIX_REGEX, '');
     this.emit(
       Events.DEBUG,
       `
@@ -363,6 +388,16 @@ class Client extends BaseClient {
   destroy() {
     super.destroy();
 
+    if (this._invalidateEmojiCache) {
+      this.off(Events.GUILD_CREATE, this._invalidateEmojiCache);
+      this.off(Events.GUILD_DELETE, this._invalidateEmojiCache);
+      this.off(Events.GUILD_EMOJI_CREATE, this._invalidateEmojiCache);
+      this.off(Events.GUILD_EMOJI_DELETE, this._invalidateEmojiCache);
+      this.off(Events.GUILD_EMOJI_UPDATE, this._invalidateEmojiCache);
+      this.off(Events.GUILD_EMOJIS_UPDATE, this._invalidateEmojiCache);
+      this.off(Events.GUILD_UNAVAILABLE, this._invalidateEmojiCache);
+    }
+
     for (const fn of this._cleanups) fn();
     this._cleanups.clear();
 
@@ -370,6 +405,8 @@ class Client extends BaseClient {
 
     this.sweepers.destroy();
     this.ws.destroy();
+    this._emojiManager = null;
+    this._emojiCacheDirty = true;
     this.token = null;
   }
 
@@ -841,7 +878,7 @@ class Client extends BaseClient {
    * @returns {Promise<boolean>}
    */
   async installUserApps(applicationId, scopes = ['applications.commands']) {
-    const scope = Array.isArray(scopes) ? scopes.join(' ') : scopes;
+    const scope = typeof scopes === 'string' ? scopes : scopes.join(' ');
     await this.api.oauth2.authorize.post({
       query: {
         client_id: applicationId,
