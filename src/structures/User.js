@@ -30,6 +30,22 @@ class User extends Base {
 
     this.flags = null;
 
+    this.premiumSinceTimestamp = null;
+
+    this.premiumGuildSinceTimestamp = null;
+
+    this.premiumType = null;
+
+    this.legacyUsername = null;
+
+    this.connectedAccounts = null;
+
+    this.mutualFriendsCount = null;
+
+    this.mutualGuilds = null;
+
+    this.mutualGuildsCount = null;
+
     this._patch(data);
   }
 
@@ -134,6 +150,111 @@ class User extends Base {
        * @type {?string}
        */
       this.pronouns = data.pronouns;
+    }
+
+    const premiumSince = 'premium_since' in data ? data.premium_since : data.premiumSince;
+    if (typeof premiumSince !== 'undefined') {
+      /**
+       * Timestamp the user started boosting Nitro
+       * @type {?number}
+       */
+      this.premiumSinceTimestamp = premiumSince ? new Date(premiumSince).getTime() : null;
+    } else {
+      this.premiumSinceTimestamp ??= null;
+    }
+
+    const premiumGuildSince = 'premium_guild_since' in data ? data.premium_guild_since : data.premiumGuildSince;
+    if (typeof premiumGuildSince !== 'undefined') {
+      /**
+       * Timestamp the user started boosting the mutual guild (if provided)
+       * @type {?number}
+       */
+      this.premiumGuildSinceTimestamp = premiumGuildSince ? new Date(premiumGuildSince).getTime() : null;
+    } else {
+      this.premiumGuildSinceTimestamp ??= null;
+    }
+
+    if ('premium_type' in data) {
+      /**
+       * Premium type level for this user
+       * @type {?number}
+       */
+      this.premiumType = data.premium_type ?? null;
+    } else if ('premiumType' in data) {
+      this.premiumType = data.premiumType ?? null;
+    } else {
+      this.premiumType ??= null;
+    }
+
+    if ('legacy_username' in data) {
+      /**
+       * Legacy username (pre-unique username migration)
+       * @type {?string}
+       */
+      this.legacyUsername = data.legacy_username ?? null;
+    } else if ('legacyUsername' in data) {
+      this.legacyUsername = data.legacyUsername ?? null;
+    } else {
+      this.legacyUsername ??= null;
+    }
+
+    /**
+     * @typedef {Object} ConnectedAccount
+     * @property {string} id The id of the connected account
+     * @property {string} name The name of the connected account
+     * @property {string} type The type of the connected account (ex: spotify, twitter, ...)
+     * @property {?boolean} [verified] Whether the connection is verified
+     * @property {?number} [visibility] Visibility of the connection
+     */
+
+    if ('connected_accounts' in data) {
+      /**
+       * Connected accounts for this user
+       * @type {?ConnectedAccount[]}
+       */
+      this.connectedAccounts = data.connected_accounts ?? null;
+    } else if ('connectedAccounts' in data) {
+      this.connectedAccounts = data.connectedAccounts ?? null;
+    } else {
+      this.connectedAccounts ??= null;
+    }
+
+    /**
+     * @typedef {Object} MutualGuild
+     * @property {Snowflake} id The id of the mutual guild
+     * @property {?string} nick The nickname of the user in the mutual guild
+     */
+
+    if ('mutualGuilds' in data) {
+      /**
+       * The guilds that this user shares with the client user
+       * @type {?MutualGuild[]}
+       */
+      this.mutualGuilds = data.mutualGuilds ?? null;
+    } else {
+      this.mutualGuilds ??= null;
+    }
+
+    if ('mutualGuildsCount' in data) {
+      /**
+       * The number of guilds that this user shares with the client user
+       * @type {?number}
+       */
+      this.mutualGuildsCount = data.mutualGuildsCount;
+    } else if (this.mutualGuildsCount == null && Array.isArray(this.mutualGuilds)) {
+      this.mutualGuildsCount = this.mutualGuilds.length;
+    } else {
+      this.mutualGuildsCount ??= null;
+    }
+
+    if ('mutualFriendsCount' in data) {
+      /**
+       * The number of friends that this user shares with the client user
+       * @type {?number}
+       */
+      this.mutualFriendsCount = data.mutualFriendsCount;
+    } else {
+      this.mutualFriendsCount ??= null;
     }
 
     if ('system' in data) {
@@ -304,6 +425,24 @@ class User extends Base {
   }
 
   /**
+   * The time the user started Nitro
+   * @type {?Date}
+   * @readonly
+   */
+  get premiumSince() {
+    return this.premiumSinceTimestamp ? new Date(this.premiumSinceTimestamp) : null;
+  }
+
+  /**
+   * The time the user started boosting the mutual guild (if provided)
+   * @type {?Date}
+   * @readonly
+   */
+  get premiumGuildSince() {
+    return this.premiumGuildSinceTimestamp ? new Date(this.premiumGuildSinceTimestamp) : null;
+  }
+
+  /**
    * A link to the user's avatar.
    * @param {ImageURLOptions} [options={}] Options for the Image URL
    * @returns {?string}
@@ -457,6 +596,10 @@ class User extends Base {
       this.accentColor === user.accentColor &&
       this.bio === user.bio &&
       this.pronouns === user.pronouns &&
+      this.premiumSinceTimestamp === user.premiumSinceTimestamp &&
+      this.premiumGuildSinceTimestamp === user.premiumGuildSinceTimestamp &&
+      this.premiumType === user.premiumType &&
+      this.legacyUsername === user.legacyUsername &&
       this.avatarDecorationData?.asset === user.avatarDecorationData?.asset &&
       this.avatarDecorationData?.skuId === user.avatarDecorationData?.skuId &&
       this.collectibles?.nameplate?.skuId === user.collectibles?.nameplate?.skuId &&

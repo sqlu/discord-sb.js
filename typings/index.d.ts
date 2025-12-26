@@ -3860,6 +3860,50 @@ export interface UserPrimaryGuild {
   tag: string | null;
 }
 
+export interface MutualGuild {
+  id: Snowflake;
+  nick?: string | null;
+}
+
+export type ConnectedAccountType =
+  | 'spotify'
+  | 'twitter'
+  | 'x'
+  | 'github'
+  | 'youtube'
+  | 'twitch'
+  | 'steam'
+  | 'reddit'
+  | 'facebook'
+  | 'roblox'
+  | 'tiktok'
+  | 'domain'
+  | 'bluesky'
+  | 'amazonmusic'
+  | 'battlenet'
+  | 'bungeenet'
+  | 'crunchyroll'
+  | 'ebay'
+  | 'epicgames'
+  | 'lol'
+  | 'paypal'
+  | 'playstation'
+  | 'riotgames'
+  | 'xbox';
+
+export interface ConnectedAccount {
+  id: string;
+  name: string;
+  type: ConnectedAccountType;
+  verified?: boolean;
+  visibility?: number;
+  show_activity?: boolean;
+  friend_sync?: boolean;
+  two_way_link?: boolean;
+  metadata_visibility?: number;
+  metadata?: unknown;
+}
+
 export interface AvatarDecorationData {
   asset: string;
   skuId: Snowflake;
@@ -4005,6 +4049,16 @@ export class User extends PartialTextBasedChannel(Base) {
   public collectibles: Collectibles | null;
   public discriminator: string;
   public pronouns?: string | null;
+  public premiumSinceTimestamp: number | null;
+  public readonly premiumSince: Date | null;
+  public premiumGuildSinceTimestamp: number | null;
+  public readonly premiumGuildSince: Date | null;
+  public premiumType: number | null;
+  public legacyUsername: string | null;
+  public connectedAccounts: ConnectedAccount[] | null;
+  public mutualFriendsCount: number | null;
+  public mutualGuildsCount: number | null;
+  public mutualGuilds: MutualGuild[] | null;
   public readonly displayName: string;
   public readonly defaultAvatarURL: string;
   public readonly dmChannel: DMChannel | null;

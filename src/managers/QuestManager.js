@@ -278,8 +278,11 @@ class QuestManager extends BaseManager {
    * @returns {Promise<void>}
    */
   async doingQuest(quest) {
-    const questName = quest.config.messages?.quest_name || 'Unknown Quest';
+    if (!(quest instanceof Quest)) {
+      quest = new Quest(quest);
+    }
 
+    const questName = quest.config.messages?.quest_name || 'Unknown Quest';
     if (!quest.isEnrolledQuest()) await this.acceptQuest(quest.id);
 
     const taskConfig = quest.config.task_config;
@@ -364,7 +367,8 @@ class QuestManager extends BaseManager {
 
   /**
    * Get cache size
-   * @returns {number}
+   * @type {number}
+   * @readonly
    */
   get size() {
     return this.cache.size;

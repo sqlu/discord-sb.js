@@ -7,6 +7,33 @@ const { Message } = require('../structures/Message');
 const ThreadMember = require('../structures/ThreadMember');
 const User = require('../structures/User');
 
+const ALLOWED_CONNECTED_ACCOUNT_TYPES = new Set([
+  'spotify',
+  'twitter',
+  'x',
+  'github',
+  'youtube',
+  'twitch',
+  'steam',
+  'reddit',
+  'facebook',
+  'roblox',
+  'tiktok',
+  'domain',
+  'bluesky',
+  'amazonmusic',
+  'battlenet',
+  'bungeenet',
+  'crunchyroll',
+  'ebay',
+  'epicgames',
+  'lol',
+  'paypal',
+  'playstation',
+  'riotgames',
+  'xbox',
+]);
+
 /**
  * Manages API methods for users and stores their cache.
  * @extends {CachedManager}
@@ -118,6 +145,25 @@ class UserManager extends CachedManager {
         data.accent_color = profile.user_profile.accent_color;
       }
     }
+    if (profile) {
+      data.premiumSince = profile.premium_since ?? null;
+      data.premiumGuildSince = profile.premium_guild_since ?? null;
+      if (typeof profile.premium_type !== 'undefined') data.premiumType = profile.premium_type;
+      data.connectedAccounts = Array.isArray(profile.connected_accounts)
+        ? profile.connected_accounts.filter(ca => ALLOWED_CONNECTED_ACCOUNT_TYPES.has(ca?.type))
+        : null;
+      if (typeof profile.legacy_username !== 'undefined') data.legacyUsername = profile.legacy_username;
+      else if (typeof profile.user?.legacy_username !== 'undefined') data.legacyUsername = profile.user.legacy_username;
+      if (typeof profile.user?.premium_type !== 'undefined' && typeof data.premiumType === 'undefined') {
+        data.premiumType = profile.user.premium_type;
+      }
+    }
+    if (typeof data.premium_type !== 'undefined' && typeof data.premiumType === 'undefined') {
+      data.premiumType = data.premium_type;
+    }
+    data.mutualFriendsCount = profile?.mutual_friends_count ?? null;
+    data.mutualGuilds = profile?.mutual_guilds ?? null;
+    data.mutualGuildsCount = Array.isArray(data.mutualGuilds) ? data.mutualGuilds.length : null;
     return this._add(data, cache);
   }
 
