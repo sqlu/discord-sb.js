@@ -436,7 +436,7 @@ export const enum ApplicationType {
   CREATOR_MONETIZATION = 4,
 }
 
-export enum ClientEvents {
+export const enum ClientEvents {
   RateLimit = 'rateLimit',
   InvalidRequestWarning = 'invalidRequestWarning',
   ApiResponse = 'apiResponse',
