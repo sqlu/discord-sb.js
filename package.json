@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sqlu/discord-selfbot.js.git"
+    "url": "git+https://github.com/sqlu/discord-sb.js.git"
   },
   "keywords": [
     "discord.js",
@@ -47,9 +47,9 @@
   "author": "Snayz",
   "license": "GNU General Public License v3.0",
   "bugs": {
-    "url": "https://github.com/sqlu/discord-selfbot.js/issues"
+    "url": "https://github.com/sqlu/discord-sb.js/issues"
   },
-  "homepage": "https://github.com/sqlu/discord-selfbot.js#readme",
+  "homepage": "https://github.com/sqlu/discord-sb.js#readme",
   "dependencies": {
     "@discordjs/builders": "^1.6.3",
     "@discordjs/collection": "^2.1.1",

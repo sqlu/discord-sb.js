@@ -1,21 +1,21 @@
-> [!IMPORTANT]
-> **This project is a fork of the [discord.js-selfbot-v13](https://github.com/aiko-chan-ai/discord.js-selfbot-v13) an archived project.**
+[!IMPORTANT]
+**This project is a fork of the [discord.js-selfbot-v13](https://github.com/aiko-chan-ai/discord.js-selfbot-v13) archived project.**
 
 # discord.js-selfbot-v13 (fork)
 
 Small additions focused on profile data and account integrations.
 
-## Nouveautés
-- Les fetchs de users remontent désormais la bio/pronoms quand disponible (via `/users/{id}/profile`).
-- `client.user.fetchConnections({ includeMetadata })` pour récupérer vos connexions (Spotify, Steam, etc.) avec métadonnées quand l’API les expose.
+## What's New
+- User fetches now include bio and pronouns when available (via `/users/{id}/profile`).
+- `client.user.fetchConnections({ includeMetadata })` returns your connections (Spotify, Steam, etc.) with metadata when the API exposes it.
 
-## Exemples rapides
+## Quick Examples
 ```js
-// Récupérer la bio d'un user
+// Fetch a user's bio and pronouns
 const user = await client.users.fetch('123456789012345678');
 console.log(user.bio, user.pronouns);
 
-// Lister vos connexions avec métadonnées
+// List your connections with metadata
 const connections = await client.user.fetchConnections();
 console.log(connections);
 ```
