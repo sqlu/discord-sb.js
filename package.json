@@ -14,7 +14,7 @@
     "lint:typings": "tslint typings/index.d.ts",
     "lint:typings:fix": "tslint typings/index.d.ts --fix",
     "format": "prettier --write src/**/*.js typings/**/*.ts",
-    "lint:all": "npm run lint &&  npm run lint:typings",
+    "lint:all": "npm run lint &&  npm run lint:typings", 
     "docs": "docgen --source src --custom docs/index.yml --output docs/main.json",
     "docs:test": "docgen --source src --custom docs/index.yml",
     "build": "npm run lint:fix && npm run lint:typings:fix && npm run format && npm run docs"
