@@ -163,6 +163,9 @@ class UserManager extends CachedManager {
     data.mutualFriendsCount = profile?.mutual_friends_count ?? null;
     data.mutualGuilds = profile?.mutual_guilds ?? null;
     data.mutualGuildsCount = Array.isArray(data.mutualGuilds) ? data.mutualGuilds.length : null;
+    const mutualGroups = this._getMutualGroups(id);
+    data.mutualGroupsCount = mutualGroups?.length ?? null;
+    data.mutualGroups = mutualGroups ?? null;
     return this._add(data, cache);
   }
 
@@ -197,6 +200,32 @@ class UserManager extends CachedManager {
     if (user instanceof GuildMember) return user.user.id;
     if (user instanceof Message) return user.author.id;
     return super.resolveId(user);
+  }
+
+  /**
+   * Counts the number of group DMs that include both the client user and the target user.
+   * @param {Snowflake} userId // pas uhq
+   * @returns {?number}
+   * @private
+   */
+  _getMutualGroups(userId) {
+    const meId = this.client.user?.id;
+    if (!meId || !userId) return null;
+
+    const results = [];
+    for (const channel of this.client.channels.cache.values()) {
+      if (channel?.type !== 'GROUP_DM') continue;
+
+      const baseRecipients = (channel._recipients ?? []).filter(r => r?.id);
+      const recipientIds = new Set(baseRecipients.map(r => r.id));
+      recipientIds.add(meId);
+
+      if (!recipientIds.has(userId)) continue;
+
+      results.push(channel);
+    }
+
+    return results;
   }
 }
 

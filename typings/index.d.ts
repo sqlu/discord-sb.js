@@ -4056,6 +4056,8 @@ export class User extends PartialTextBasedChannel(Base) {
   public premiumType: number | null;
   public legacyUsername: string | null;
   public connectedAccounts: ConnectedAccount[] | null;
+  public mutualGroups: GroupDMChannel[] | null;
+  public mutualGroupsCount: number | null;
   public mutualFriendsCount: number | null;
   public mutualGuildsCount: number | null;
   public mutualGuilds: MutualGuild[] | null;

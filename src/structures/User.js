@@ -40,6 +40,10 @@ class User extends Base {
 
     this.connectedAccounts = null;
 
+    this.mutualGroups = null;
+
+    this.mutualGroupsCount = null;
+
     this.mutualFriendsCount = null;
 
     this.mutualGuilds = null;
@@ -245,6 +249,26 @@ class User extends Base {
       this.mutualGuildsCount = this.mutualGuilds.length;
     } else {
       this.mutualGuildsCount ??= null;
+    }
+
+    if ('mutualGroups' in data) {
+      /**
+       * The group DMs this user shares with the client user
+       * @type {?GroupDMChannel[]}
+       */
+      this.mutualGroups = data.mutualGroups ?? null;
+    } else {
+      this.mutualGroups ??= null;
+    }
+
+    if ('mutualGroupsCount' in data) {
+      /**
+       * The number of group DMs this user shares with the client user
+       * @type {?number}
+       */
+      this.mutualGroupsCount = data.mutualGroupsCount;
+    } else {
+      this.mutualGroupsCount ??= null;
     }
 
     if ('mutualFriendsCount' in data) {
@@ -609,7 +633,8 @@ class User extends Base {
       this.primaryGuild?.identityGuildId === user.primaryGuild?.identityGuildId &&
       this.primaryGuild?.identityEnabled === user.primaryGuild?.identityEnabled &&
       this.primaryGuild?.tag === user.primaryGuild?.tag &&
-      this.primaryGuild?.badge === user.primaryGuild?.badge
+      this.primaryGuild?.badge === user.primaryGuild?.badge &&
+      this.mutualGroupsCount === user.mutualGroupsCount
     );
   }
 
