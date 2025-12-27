@@ -3943,56 +3943,191 @@ export interface WidgetsResponse {
 export interface QuestEnrollOptions {
   location?: number;
   isTargeted?: boolean;
-  metadataRaw?: any;
+  metadataRaw?: unknown;
+}
+
+export type QuestTaskName =
+  | 'WATCH_VIDEO'
+  | 'WATCH_VIDEO_ON_MOBILE'
+  | 'PLAY_ON_DESKTOP'
+  | 'STREAM_ON_DESKTOP'
+  | 'PLAY_ACTIVITY'
+  | 'PLAY_ON_PLAYSTATION'
+  | 'PLAY_ON_XBOX'
+  | string;
+
+export interface QuestTaskLegacyEntry {
+  event_name?: QuestTaskName;
+  target: number;
+  external_ids?: string[];
 }
 
 export interface QuestTaskConfig {
-  tasks?: {
-    WATCH_VIDEO?: { target: number };
-    WATCH_VIDEO_ON_MOBILE?: { target: number };
-    PLAY_ON_DESKTOP?: { target: number };
-    STREAM_ON_DESKTOP?: { target: number };
-    PLAY_ACTIVITY?: { target: number };
+  type?: number;
+  join_operator?: 'and' | 'or';
+  tasks?: Partial<Record<QuestTaskName, QuestTaskLegacyEntry>>;
+}
+
+export interface QuestVideoAsset {
+  url: string;
+  width: number;
+  height: number;
+  thumbnail: string;
+  caption?: string | null;
+  transcript?: string | null;
+}
+
+export interface QuestTaskAssets {
+  video?: QuestVideoAsset;
+  video_low_res?: QuestVideoAsset;
+  video_hls?: QuestVideoAsset;
+}
+
+export interface QuestTaskV2Entry {
+  type: QuestTaskName;
+  target: number;
+  applications?: { id: string }[];
+  assets?: QuestTaskAssets;
+  messages?: { video_title?: string };
+  external_ids?: string[];
+}
+
+export interface QuestTaskConfigV2 {
+  tasks?: Partial<Record<QuestTaskName, QuestTaskV2Entry>>;
+  join_operator?: 'and' | 'or';
+}
+
+export interface QuestRewardMessages {
+  name: string;
+  name_with_article: string;
+  redemption_instructions_by_platform: Record<string, string>;
+}
+
+export interface QuestReward {
+  type: number;
+  sku_id: string;
+  messages: QuestRewardMessages;
+  asset?: string | null;
+  asset_video?: string | null;
+  approximate_count?: number | null;
+  redemption_link?: string | null;
+  orb_quantity?: number;
+  expires_at?: string | null;
+  expires_at_premium?: string | null;
+  expiration_mode?: number | null;
+}
+
+export interface QuestRewardsConfig {
+  assignment_method: number;
+  rewards: QuestReward[];
+  rewards_expire_at: string;
+  platforms: number[];
+}
+
+export interface QuestVideoMetadata {
+  messages?: {
+    video_title?: string;
+    video_end_cta_title?: string;
+    video_end_cta_subtitle?: string;
+    video_end_cta_button_label?: string;
+  };
+  assets?: {
+    video_player_video_hls?: string | null;
+    video_player_video?: string | null;
+    video_player_thumbnail?: string | null;
+    video_player_video_low_res?: string | null;
+    video_player_caption?: string | null;
+    video_player_transcript?: string | null;
+    quest_bar_preview_video?: string | null;
+    quest_bar_preview_thumbnail?: string | null;
+    quest_home_video?: string | null;
   };
 }
 
-export interface QuestUserStatus {
-  enrolled_at?: string;
-  completed_at?: string;
-  claimed_at?: string;
-  progress?: {
-    WATCH_VIDEO?: { value: number };
-    WATCH_VIDEO_ON_MOBILE?: { value: number };
-    PLAY_ON_DESKTOP?: { value: number };
-    STREAM_ON_DESKTOP?: { value: number };
-    PLAY_ACTIVITY?: { value: number };
-  };
+export interface QuestAssets {
+  hero: string | null;
+  hero_video: string | null;
+  quest_bar_hero: string | null;
+  quest_bar_hero_video: string | null;
+  game_tile: string | null;
+  logotype: string | null;
+  game_tile_light: string | null;
+  game_tile_dark: string | null;
+  logotype_light: string | null;
+  logotype_dark: string | null;
+}
+
+export interface QuestCTAConfig {
+  link: string;
+  button_label: string;
+  subtitle?: string;
+  android?: { android_app_id: string };
+  ios?: { ios_app_id: string };
 }
 
 export interface QuestConfig {
+  id: string;
+  config_version?: number;
+  starts_at?: string;
   expires_at?: string;
-  messages?: {
-    quest_name?: string;
-  };
-  application?: {
+  features?: number[];
+  application: {
     id: string;
     name: string;
+    link: string;
+  };
+  assets: QuestAssets;
+  colors?: {
+    primary?: string;
+    secondary?: string;
+  };
+  messages?: {
+    quest_name?: string;
+    game_title?: string;
+    game_publisher?: string;
   };
   task_config: QuestTaskConfig;
-  task_config_v2?: QuestTaskConfig;
+  task_config_v2?: QuestTaskConfigV2;
+  rewards_config: QuestRewardsConfig;
+  video_metadata?: QuestVideoMetadata;
+  share_policy?: 'shareable_everywhere' | string;
+  cta_config: QuestCTAConfig;
+}
+
+export interface QuestProgressEntry {
+  value: number;
+  event_name?: QuestTaskName;
+  updated_at?: string;
+  completed_at?: string | null;
+  heartbeat?: number | null;
+}
+
+export interface QuestUserStatus {
+  user_id?: string;
+  quest_id?: string;
+  enrolled_at?: string;
+  completed_at?: string | null;
+  claimed_at?: string | null;
+  claimed_tier?: number | null;
+  last_stream_heartbeat_at?: string | null;
+  stream_progress_seconds?: number;
+  dismissed_quest_content?: number;
+  progress?: Partial<Record<QuestTaskName, QuestProgressEntry>>;
 }
 
 export interface QuestRawData {
   id: string;
   config: QuestConfig;
-  user_status?: QuestUserStatus;
+  user_status?: QuestUserStatus | null;
+  targeted_content?: unknown[];
+  preview?: boolean;
 }
 
 export class Quest {
   constructor(data: QuestRawData);
   public id: string;
   public config: QuestConfig;
-  public userStatus?: QuestUserStatus;
+  public userStatus?: QuestUserStatus | null;
   public isExpired(date?: Date): boolean;
   public isCompleted(): boolean;
   public hasClaimedRewards(): boolean;
@@ -4002,6 +4137,8 @@ export class Quest {
 
 export interface QuestData {
   quests?: QuestRawData[];
+  quest_enrollment_blocked_until?: string | null;
+  recover_users_disqualified_quest_count?: number | null;
 }
 
 export interface OrbsData {
