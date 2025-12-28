@@ -1670,7 +1670,7 @@ class Guild extends AnonymousGuild {
    * guild.markRead([
    *   { channel_id: '123456789012345678', message_id: '987654321098765432' }
    * ]);
-  */
+   */
   async markRead(readStates = []) {
     // If no readStates provided, get all channels in guild
     if (readStates.length === 0) {
