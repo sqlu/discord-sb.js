@@ -186,10 +186,6 @@ console.log(`%cToken copied to clipboard.`, 'font-size: 16px');
 
 - [Discord.js](https://github.com/discordjs/discord.js)
 
-## Other projects
-
-- [***aiko-chan-ai/DiscordBotClient***](https://github.com/aiko-chan-ai/DiscordBotClient) - patched Discord client with bot login support
-
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=sqlu/discord-sb.js&type=Date)](https://star-history.com/#sqlu/discord-sb.js&Date)
