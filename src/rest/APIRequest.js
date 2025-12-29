@@ -7,6 +7,8 @@ const { ciphers } = require('../util/Constants');
 const Util = require('../util/Util');
 
 let agent = null;
+let agentConfigKey = null;
+const cipherList = ciphers.join(':');
 
 class APIRequest {
   constructor(rest, method, path, options) {
@@ -20,6 +22,7 @@ class APIRequest {
     this.fullUserAgent = this.client.options.http.headers['User-Agent'];
 
     this.client.options.ws.properties.browser_user_agent = this.fullUserAgent;
+    this.superProperties = Buffer.from(JSON.stringify(this.client.options.ws.properties), 'ascii').toString('base64');
 
     let queryString = '';
     if (options.query) {
@@ -31,20 +34,27 @@ class APIRequest {
     this.path = `${path}${queryString && `?${queryString}`}`;
   }
 
-  make(captchaKey, captchaRqToken) {
-    if (!agent) {
-      const r_ = Util.checkUndiciProxyAgent(this.client.options.http.agent);
-      if (!r_) {
-        agent = new Client('https://discord.com', {
-          connect: buildConnector({ ciphers: ciphers.join(':') }),
-        });
-      } else {
-        agent = new ProxyAgent({
-          ...r_,
-          ciphers: ciphers.join(':'),
-        });
-      }
+  getDispatcher() {
+    const proxyConfig = Util.checkUndiciProxyAgent(this.client.options.http.agent);
+    const nextKey = JSON.stringify(proxyConfig || { direct: true });
+
+    if (!agent || agentConfigKey !== nextKey) {
+      agentConfigKey = nextKey;
+      agent = proxyConfig
+        ? new ProxyAgent({
+            ...proxyConfig,
+            ciphers: cipherList,
+          })
+        : new Client('https://discord.com', {
+            connect: buildConnector({ ciphers: cipherList }),
+          });
     }
+
+    return agent;
+  }
+
+  make(captchaKey, captchaRqToken) {
+    const dispatcher = this.getDispatcher();
 
     const API =
       this.options.versioned === false
@@ -65,9 +75,7 @@ class APIRequest {
       'sec-fetch-site': 'same-origin',
       'x-discord-locale': 'en-US',
       'x-discord-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
-      'x-super-properties': `${Buffer.from(JSON.stringify(this.client.options.ws.properties), 'ascii').toString(
-        'base64',
-      )}`,
+      'x-super-properties': this.superProperties,
       origin: 'https://discord.com',
       'x-debug-options': 'bugReporterEnabled',
       ...this.client.options.http.headers,
@@ -144,7 +152,7 @@ class APIRequest {
         body,
         signal: controller.signal,
         redirect: 'follow',
-        dispatcher: agent,
+        dispatcher,
         credentials: 'include',
       })
       .finally(() => clearTimeout(timeout));

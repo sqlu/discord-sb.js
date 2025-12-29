@@ -130,42 +130,7 @@ class UserManager extends CachedManager {
       },
     });
 
-    if (!profile?.user) throw new Error('USER_PROFILE_MISSING');
-
-    const data = { ...profile.user };
-
-    if (profile.user_profile) {
-      data.bio = profile.user_profile.bio ?? null;
-      if (typeof profile.user_profile.pronouns !== 'undefined') data.pronouns = profile.user_profile.pronouns;
-      if (typeof profile.user_profile.banner !== 'undefined' && typeof data.banner === 'undefined') {
-        data.banner = profile.user_profile.banner;
-      }
-      if (typeof profile.user_profile.accent_color !== 'undefined' && typeof data.accent_color === 'undefined') {
-        data.accent_color = profile.user_profile.accent_color;
-      }
-    }
-
-    data.premiumSince = profile.premium_since ?? null;
-    data.premiumGuildSince = profile.premium_guild_since ?? null;
-    if (typeof profile.premium_type !== 'undefined') data.premiumType = profile.premium_type;
-    data.connectedAccounts = Array.isArray(profile.connected_accounts)
-      ? profile.connected_accounts.filter(ca => ALLOWED_CONNECTED_ACCOUNT_TYPES.has(ca?.type))
-      : null;
-    if (typeof profile.legacy_username !== 'undefined') data.legacyUsername = profile.legacy_username;
-    else if (typeof profile.user?.legacy_username !== 'undefined') data.legacyUsername = profile.user.legacy_username;
-    if (typeof profile.user?.premium_type !== 'undefined' && typeof data.premiumType === 'undefined') {
-      data.premiumType = profile.user.premium_type;
-    }
-    if (typeof data.premium_type !== 'undefined' && typeof data.premiumType === 'undefined') {
-      data.premiumType = data.premium_type;
-    }
-
-    data.mutualFriendsCount = profile?.mutual_friends_count ?? null;
-    data.mutualGuilds = profile?.mutual_guilds ?? null;
-    data.mutualGuildsCount = Array.isArray(data.mutualGuilds) ? data.mutualGuilds.length : null;
-    const mutualGroups = this._getMutualGroups(id);
-    data.mutualGroupsCount = mutualGroups?.length ?? null;
-    data.mutualGroups = mutualGroups ?? null;
+    const data = this._buildUserDataFromProfile(profile, id);
     return this._add(data, cache);
   }
 
@@ -226,6 +191,69 @@ class UserManager extends CachedManager {
     }
 
     return results;
+  }
+
+  /**
+   * Flattens a profile response into the User shape while keeping nullability explicit.
+   * @param {Object} profile The profile payload from the API
+   * @param {Snowflake} userId The user id for mutual calculations
+   * @returns {Object}
+   * @private
+   */
+  _buildUserDataFromProfile(profile, userId) {
+    if (!profile?.user) throw new Error('USER_PROFILE_MISSING');
+
+    const data = { ...profile.user };
+    const userProfile = profile.user_profile ?? {};
+    const profileUser = profile.user ?? {};
+
+    const assignNullable = (source, key, targetKey = key) => {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        data[targetKey] = source[key] ?? null;
+      }
+    };
+
+    assignNullable(userProfile, 'bio');
+    assignNullable(userProfile, 'pronouns');
+
+    if (typeof userProfile.banner !== 'undefined' && typeof data.banner === 'undefined') {
+      data.banner = userProfile.banner;
+    }
+    if (typeof userProfile.accent_color !== 'undefined' && typeof data.accent_color === 'undefined') {
+      data.accent_color = userProfile.accent_color;
+    }
+
+    data.premiumSince = profile.premium_since ?? null;
+    data.premiumGuildSince = profile.premium_guild_since ?? null;
+    assignNullable(profile, 'premium_type', 'premiumType');
+    assignNullable(profileUser, 'premium_type', 'premiumType');
+    if (typeof data.premium_type !== 'undefined' && typeof data.premiumType === 'undefined') {
+      data.premiumType = data.premium_type;
+    }
+
+    if (Array.isArray(profile.connected_accounts)) {
+      data.connectedAccounts = profile.connected_accounts.filter(ca => ALLOWED_CONNECTED_ACCOUNT_TYPES.has(ca?.type));
+    } else {
+      data.connectedAccounts = null;
+    }
+
+    if (typeof profile.legacy_username !== 'undefined') {
+      data.legacyUsername = profile.legacy_username;
+    } else if (typeof profileUser.legacy_username !== 'undefined') {
+      data.legacyUsername = profileUser.legacy_username;
+    } else {
+      data.legacyUsername ??= null;
+    }
+
+    data.mutualFriendsCount = profile?.mutual_friends_count ?? null;
+    data.mutualGuilds = profile?.mutual_guilds ?? null;
+    data.mutualGuildsCount = Array.isArray(data.mutualGuilds) ? data.mutualGuilds.length : null;
+
+    const mutualGroups = this._getMutualGroups(userId);
+    data.mutualGroups = mutualGroups ?? null;
+    data.mutualGroupsCount = mutualGroups?.length ?? null;
+
+    return data;
   }
 }
 

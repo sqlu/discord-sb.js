@@ -1,31 +1,37 @@
 'use strict';
 
 const noop = () => {}; // eslint-disable-line no-empty-function
-const methods = ['get', 'post', 'delete', 'patch', 'put'];
-const reflectors = [
+const methods = new Set(['get', 'post', 'delete', 'patch', 'put']);
+const reflectors = new Set([
   'toString',
   'valueOf',
   'inspect',
   'constructor',
   Symbol.toPrimitive,
   Symbol.for('nodejs.util.inspect.custom'),
-];
+]);
+const idRouteRegex = /\d{16,19}/;
+const majorIdRoutes = new Set(['channels', 'guilds']);
+
+function buildRouteBucket(route) {
+  const routeBucket = [];
+  for (let i = 0; i < route.length; i++) {
+    const previous = route[i - 1];
+    if (previous === 'reactions') break;
+    const segment = route[i];
+    if (idRouteRegex.test(segment) && !majorIdRoutes.has(previous)) routeBucket.push(':id');
+    else routeBucket.push(segment);
+  }
+  return routeBucket;
+}
 
 function buildRoute(manager) {
   const route = [''];
   const handler = {
     get(target, name) {
-      if (reflectors.includes(name)) return () => route.join('/');
-      if (methods.includes(name)) {
-        const routeBucket = [];
-        for (let i = 0; i < route.length; i++) {
-          // Reactions routes and sub-routes all share the same bucket
-          if (route[i - 1] === 'reactions') break;
-          // Literal ids should only be taken account if they are the Major id (the Channel/Guild id)
-          if (/\d{16,19}/g.test(route[i]) && !/channels|guilds/.test(route[i - 1])) routeBucket.push(':id');
-          // All other parts of the route should be considered as part of the bucket identifier
-          else routeBucket.push(route[i]);
-        }
+      if (reflectors.has(name)) return () => route.join('/');
+      if (methods.has(name)) {
+        const routeBucket = buildRouteBucket(route);
         return options =>
           manager.request(
             name,

@@ -924,37 +924,48 @@ class Util extends null {
 
   static createPromiseInteraction(client, nonce, timeoutMs = 5_000, isHandlerDeferUpdate = false, parent) {
     return new Promise((resolve, reject) => {
-      // Waiting for MsgCreate / ModalCreate
       let dataFromInteractionSuccess;
       let dataFromNormalEvent;
+      let finished = false;
+      const removeListeners = () => {
+        client.removeListener(Events.MESSAGE_CREATE, handler);
+        client.removeListener(Events.INTERACTION_MODAL_CREATE, handler);
+        if (isHandlerDeferUpdate) client.removeListener(Events.UNHANDLED_PACKET, handler);
+      };
+
+      const finalize = data => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        removeListeners();
+        client.decrementMaxListeners();
+        resolve(data);
+      };
+
+      const fail = () => {
+        if (finished) return;
+        finished = true;
+        removeListeners();
+        client.decrementMaxListeners();
+        reject(new DiscordError('INTERACTION_FAILED'));
+      };
       const handler = data => {
         // UnhandledPacket
         if (isHandlerDeferUpdate && data.d?.nonce == nonce && data.t == 'INTERACTION_SUCCESS') {
           // Interaction#deferUpdate
-          client.removeListener(Events.MESSAGE_CREATE, handler);
-          client.removeListener(Events.UNHANDLED_PACKET, handler);
-          client.removeListener(Events.INTERACTION_MODAL_CREATE, handler);
+          removeListeners();
           dataFromInteractionSuccess = parent;
         }
         if (data.nonce !== nonce) return;
-        clearTimeout(timeout);
-        client.removeListener(Events.MESSAGE_CREATE, handler);
-        client.removeListener(Events.INTERACTION_MODAL_CREATE, handler);
-        if (isHandlerDeferUpdate) client.removeListener(Events.UNHANDLED_PACKET, handler);
-        client.decrementMaxListeners();
         dataFromNormalEvent = data;
-        resolve(data);
+        finalize(data);
       };
       const timeout = setTimeout(() => {
         if (dataFromInteractionSuccess || dataFromNormalEvent) {
-          resolve(dataFromNormalEvent || dataFromInteractionSuccess);
+          finalize(dataFromNormalEvent || dataFromInteractionSuccess);
           return;
         }
-        client.removeListener(Events.MESSAGE_CREATE, handler);
-        client.removeListener(Events.INTERACTION_MODAL_CREATE, handler);
-        if (isHandlerDeferUpdate) client.removeListener(Events.UNHANDLED_PACKET, handler);
-        client.decrementMaxListeners();
-        reject(new DiscordError('INTERACTION_FAILED'));
+        fail();
       }, timeoutMs).unref();
       client.incrementMaxListeners();
       client.on(Events.MESSAGE_CREATE, handler);
