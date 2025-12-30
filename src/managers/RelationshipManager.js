@@ -182,6 +182,16 @@ class RelationshipManager extends BaseManager {
   }
 
   /**
+   * Refreshes the relationship caches from the API.
+   * @returns {Promise<RelationshipManager>}
+   */
+  async refreshCache() {
+    const data = await this.client.api.users['@me'].relationships.get();
+    this._setup(data);
+    return this;
+  }
+
+  /**
    * Deletes a friend / blocked relationship with a client user or cancels a friend request.
    * @param {UserResolvable} user Target
    * @returns {Promise<boolean>}

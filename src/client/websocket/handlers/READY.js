@@ -35,6 +35,22 @@ module.exports = (client, { d: data }, shard) => {
   // Relationship
   client.relationships._setup(data.relationships);
 
+  if (Array.isArray(data.relationships)) {
+    for (const relation of data.relationships) {
+      const user = client.users._add(relation.user);
+      if (!user) continue;
+      if (relation.type === 1) {
+        client.user.friends.set(user.id, user);
+      } else if (relation.type === 2) {
+        client.user.blocked.set(user.id, user);
+      } else if (relation.type === 3) {
+        client.user.pending.set(user.id, user);
+      } else if (relation.type === 4) {
+        client.user.outgoing.set(user.id, user);
+      }
+    }
+  }
+
   // ClientSetting
   client.settings._patch(data.user_settings);
 
