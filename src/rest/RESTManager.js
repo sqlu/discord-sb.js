@@ -2,15 +2,12 @@
 
 const { setInterval } = require('node:timers');
 const { Collection } = require('@discordjs/collection');
-const makeFetchCookie = require('fetch-cookie');
-const { CookieJar } = require('tough-cookie');
-const { fetch: fetchOriginal } = require('undici');
 const APIRequest = require('./APIRequest');
 const routeBuilder = require('./APIRouter');
 const RequestHandler = require('./RequestHandler');
 const { Error } = require('../errors');
 const { Endpoints } = require('../util/Constants');
-
+const FetchUtil = require('../util/FetchUtil');
 class RESTManager {
   constructor(client) {
     this.client = client;
@@ -20,8 +17,8 @@ class RESTManager {
     this.globalRemaining = this.globalLimit;
     this.globalReset = null;
     this.globalDelay = null;
-    this.cookieJar = new CookieJar();
-    this.fetch = makeFetchCookie.default(fetchOriginal, this.cookieJar);
+    this.cookieJar = FetchUtil.createCookieJar();
+    this.fetch = FetchUtil.wrapFetchWithCookies(FetchUtil.getNativeFetch(), this.cookieJar);
     if (client.options.restSweepInterval > 0) {
       this.sweepInterval = setInterval(() => {
         this.handlers.sweep(handler => handler._inactive);

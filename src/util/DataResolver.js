@@ -4,9 +4,11 @@ const { Buffer } = require('node:buffer');
 const fs = require('node:fs');
 const path = require('node:path');
 const stream = require('node:stream');
-const { fetch } = require('undici');
+const { getNativeFetch } = require('./FetchUtil');
 const { Error: DiscordError, TypeError } = require('../errors');
 const Invite = require('../structures/Invite');
+
+const fetch = getNativeFetch();
 
 /**
  * The DataResolver identifies different objects and tries to resolve a specific piece of information from them.
@@ -108,15 +110,25 @@ class DataResolver extends null {
    */
   static async resolveFile(resource) {
     if (Buffer.isBuffer(resource) || resource instanceof stream.Readable) return resource;
+    if (resource instanceof Blob) return resource;
     if (typeof resource === 'string') {
       if (/^https?:\/\//.test(resource)) {
         const res = await fetch(resource);
-        if (res.ok) return res.body;
-        else throw new DiscordError('FILE_NOT_FOUND', resource);
+        if (res.ok) {
+          const arrayBuffer = await res.arrayBuffer();
+          return Buffer.from(arrayBuffer);
+        }
+        throw new DiscordError('FILE_NOT_FOUND', resource);
+      }
+
+      const file = path.resolve(resource);
+      if (typeof Bun !== 'undefined') {
+        const bunFile = Bun.file(file);
+        if (await bunFile.exists()) return bunFile;
+        throw new DiscordError('FILE_NOT_FOUND', file);
       }
 
       return new Promise((resolve, reject) => {
-        const file = path.resolve(resource);
         fs.stat(file, (err, stats) => {
           if (err) return reject(err);
           if (!stats.isFile()) return reject(new DiscordError('FILE_NOT_FOUND', file));
@@ -136,6 +148,10 @@ class DataResolver extends null {
   static async resolveFileAsBuffer(resource) {
     const file = await this.resolveFile(resource);
     if (Buffer.isBuffer(file)) return file;
+    if (file instanceof Blob) {
+      const arrayBuffer = await file.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
 
     const buffers = [];
     for await (const data of file) buffers.push(data);

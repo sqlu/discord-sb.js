@@ -1,12 +1,9 @@
 'use strict';
 
-const { spawn } = require('child_process');
 const { createSocket } = require('dgram');
 const { EventEmitter } = require('events');
 const { Buffer } = require('node:buffer');
 const { Writable } = require('stream');
-const find = require('find-process');
-const kill = require('tree-kill');
 const { RtpPacket } = require('werift-rtp');
 const Util = require('../../../util/Util');
 const { randomPorts } = require('../util/Function');
@@ -65,54 +62,79 @@ class Recorder extends EventEmitter {
     if (isStream) {
       this.outputStream = StreamOutput(output);
     }
-    const stream = spawn('ffmpeg', [
-      '-reorder_queue_size',
-      '500',
-      '-thread_queue_size',
-      '500',
-      '-err_detect',
-      'ignore_err',
-      '-flags2',
-      '+export_mvs',
-      '-fflags',
-      '+genpts+discardcorrupt',
-      '-use_wallclock_as_timestamps',
-      '1',
-      '-f',
-      'sdp',
-      '-analyzeduration',
-      '1M',
-      '-probesize',
-      '1M',
-      '-protocol_whitelist',
-      'file,udp,rtp,pipe,fd',
-      '-i',
-      '-', // Read from stdin
-      '-buffer_size',
-      '4M',
-      '-max_delay',
-      '500000', // 500ms
-      '-rtbufsize',
-      '4M',
-      '-c',
-      'copy',
-      '-y',
-      '-f',
-      'matroska',
-      isStream ? this.outputStream.url : output,
-    ]);
+    const stream = Bun.spawn(
+      [
+        'ffmpeg',
+        '-reorder_queue_size',
+        '500',
+        '-thread_queue_size',
+        '500',
+        '-err_detect',
+        'ignore_err',
+        '-flags2',
+        '+export_mvs',
+        '-fflags',
+        '+genpts+discardcorrupt',
+        '-use_wallclock_as_timestamps',
+        '1',
+        '-f',
+        'sdp',
+        '-analyzeduration',
+        '1M',
+        '-probesize',
+        '1M',
+        '-protocol_whitelist',
+        'file,udp,rtp,pipe,fd',
+        '-i',
+        '-', // Read from stdin
+        '-buffer_size',
+        '4M',
+        '-max_delay',
+        '500000', // 500ms
+        '-rtbufsize',
+        '4M',
+        '-c',
+        'copy',
+        '-y',
+        '-f',
+        'matroska',
+        isStream ? this.outputStream.url : output,
+      ],
+      {
+        stdin: 'pipe',
+        stdout: 'ignore',
+        stderr: 'pipe',
+      },
+    );
 
     /**
      * The FFmpeg process
      * @type {ChildProcessWithoutNullStreams}
      */
     this.stream = stream;
-    this.stream.stdin.write(sdpData);
-    this.stream.stdin.end();
-    this.stream.stderr.once('data', data => {
-      this.emit('debug', `stderr: ${data}`);
-      this.ready = true;
-      this.emit('ready');
+    const writer = this.stream.stdin.getWriter();
+    await writer.write(Buffer.from(sdpData));
+    await writer.close();
+
+    const reader = this.stream.stderr.getReader();
+    let first = true;
+    const readStderr = async () => {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value?.length) {
+          this.emit('debug', `stderr: ${Buffer.from(value)}`);
+          if (first) {
+            first = false;
+            this.ready = true;
+            this.emit('ready');
+          }
+        }
+      }
+    };
+    readStderr().catch(() => {
+      // Ignore stderr read errors
     });
   }
   /**
@@ -147,16 +169,12 @@ class Recorder extends EventEmitter {
   }
 
   destroy() {
-    const ffmpegPid = this.stream.pid; // But it is ppid ;-;
-    const args = this.stream.spawnargs.slice(1).join(' '); // Skip ffmpeg
-    find('name', 'ffmpeg', true).then(list => {
-      let process = list.find(o => o.pid === ffmpegPid || o.ppid === ffmpegPid || o.cmd.includes(args));
-      if (process) {
-        kill(process.pid);
-        this.receiver?.videoStreams?.delete(this.userId);
-        this.emit('closed');
-      }
-    });
+    if (this.stream && !this.stream.killed) {
+      this.stream.kill();
+    }
+    if (this.socket?.close) this.socket.close();
+    this.receiver?.videoStreams?.delete(this.userId);
+    this.emit('closed');
   }
 
   /**

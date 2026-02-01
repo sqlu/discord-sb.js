@@ -5,11 +5,13 @@ const { parse } = require('node:path');
 const process = require('node:process');
 const { setTimeout } = require('node:timers');
 const { Collection } = require('@discordjs/collection');
-const { fetch } = require('undici');
 const { Colors, Events } = require('./Constants');
+const { getNativeFetch } = require('./FetchUtil');
 const { Error: DiscordError, RangeError, TypeError } = require('../errors');
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const isObject = d => typeof d === 'object' && d !== null;
+
+const fetch = getNativeFetch();
 
 let deprecationEmittedForSplitMessage = false;
 let deprecationEmittedForRemoveMentions = false;
@@ -918,7 +920,15 @@ class Util extends null {
         uri: data.toString(),
       };
     }
-    if (typeof data === 'object' && typeof data.uri === 'string') return data;
+    if (typeof data === 'object') {
+      if (typeof data.uri === 'string') return data;
+      if (typeof data.url === 'string') {
+        return {
+          uri: data.url,
+          headers: data.headers,
+        };
+      }
+    }
     return false;
   }
 

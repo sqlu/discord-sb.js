@@ -2,13 +2,42 @@
 
 const Buffer = require('node:buffer').Buffer;
 const { setTimeout } = require('node:timers');
-const { FormData, buildConnector, Client, ProxyAgent } = require('undici');
 const { ciphers } = require('../util/Constants');
+const { getNativeFormData } = require('../util/FetchUtil');
 const Util = require('../util/Util');
 
-let agent = null;
-let agentConfigKey = null;
 const cipherList = ciphers.join(':');
+
+const isReadableStream = value => value && typeof value.getReader === 'function';
+const isNodeReadable = value => value && typeof value.pipe === 'function';
+
+const streamToBuffer = async stream => {
+  if (isReadableStream(stream)) {
+    const arrayBuffer = await new Response(stream).arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+};
+
+const toFile = async (value, name) => {
+  if (value instanceof File) return value;
+  if (value instanceof Blob) return new File([value], name, { type: value.type || undefined });
+  if (Buffer.isBuffer(value) || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    return new File([value], name);
+  }
+  if (isReadableStream(value) || isNodeReadable(value)) {
+    const buffer = await streamToBuffer(value);
+    return new File([buffer], name);
+  }
+  if (value?.arrayBuffer) {
+    const buffer = await value.arrayBuffer();
+    return new File([buffer], name);
+  }
+  return new File([String(value)], name);
+};
 
 class APIRequest {
   constructor(rest, method, path, options) {
@@ -34,27 +63,22 @@ class APIRequest {
     this.path = `${path}${queryString && `?${queryString}`}`;
   }
 
-  getDispatcher() {
+  getProxyConfig() {
     const proxyConfig = Util.checkUndiciProxyAgent(this.client.options.http.agent);
-    const nextKey = JSON.stringify(proxyConfig || { direct: true });
-
-    if (!agent || agentConfigKey !== nextKey) {
-      agentConfigKey = nextKey;
-      agent = proxyConfig
-        ? new ProxyAgent({
-            ...proxyConfig,
-            ciphers: cipherList,
-          })
-        : new Client('https://discord.com', {
-            connect: buildConnector({ ciphers: cipherList }),
-          });
+    if (!proxyConfig) return null;
+    if (typeof proxyConfig === 'string') return proxyConfig;
+    if (proxyConfig?.uri) {
+      if (proxyConfig.headers) {
+        return { url: proxyConfig.uri, headers: proxyConfig.headers };
+      }
+      return proxyConfig.uri;
     }
-
-    return agent;
+    return null;
   }
 
-  make(captchaKey, captchaRqToken) {
-    const dispatcher = this.getDispatcher();
+  async make(captchaKey, captchaRqToken) {
+    const fetch = this.rest.fetch;
+    const FormData = getNativeFormData();
 
     const API =
       this.options.versioned === false
@@ -115,15 +139,9 @@ class APIRequest {
     if (this.options.files?.length) {
       body = new FormData();
       for (const [index, file] of this.options.files.entries()) {
-        // Why undici#FormData doesn't support file stream?
-        // Hacky way to support file stream
-        if (file?.file) {
-          body.set(file.key ?? `files[${index}]`, {
-            [Symbol.toStringTag]: 'File',
-            name: file.name,
-            stream: () => file.file,
-          });
-        }
+        if (!file?.file) continue;
+        const resolved = await toFile(file.file, file.name ?? `file-${index}`);
+        body.append(file.key ?? `files[${index}]`, resolved);
       }
       if (typeof this.options.data !== 'undefined') {
         if (this.options.dontUsePayloadJSON) {
@@ -145,17 +163,18 @@ class APIRequest {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.client.options.restRequestTimeout).unref();
-    return this.rest
-      .fetch(url, {
-        method: this.method.toUpperCase(), // Undici doesn't normalize "patch" into "PATCH" (which surprisingly follows the spec).
-        headers,
-        body,
-        signal: controller.signal,
-        redirect: 'follow',
-        dispatcher,
-        credentials: 'include',
-      })
-      .finally(() => clearTimeout(timeout));
+    const fetchOptions = {
+      method: this.method.toUpperCase(), // Undici doesn't normalize "patch" into "PATCH" (which surprisingly follows the spec).
+      headers,
+      body,
+      signal: controller.signal,
+      redirect: 'follow',
+      credentials: 'include',
+    };
+    if (cipherList) fetchOptions.tls = { ciphers: cipherList };
+    const proxy = this.getProxyConfig();
+    if (proxy) fetchOptions.proxy = proxy;
+    return fetch(url, fetchOptions).finally(() => clearTimeout(timeout));
   }
 }
 

@@ -1415,6 +1415,16 @@ class Guild extends AnonymousGuild {
   }
 
   /**
+   * Marks an AutoMod alert message as a false alarm.
+   * @param {Snowflake} alertMessageId The AutoMod alert system message id
+   * @param {string} [reason] Reason for reporting a false alarm
+   * @returns {Promise<void>}
+   */
+  markAutoModerationFalseAlarm(alertMessageId, reason) {
+    return this.client.guilds.markAutoModerationFalseAlarm(this.id, alertMessageId, reason);
+  }
+
+  /**
    * Leaves the guild.
    * @returns {Promise<Guild>}
    * @example

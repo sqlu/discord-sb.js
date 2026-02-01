@@ -1,23 +1,23 @@
 {
   "name": "discord-sb.js",
-  "version": "1.1.1",
+  "version": "1.2.1",
   "description": "An unofficial discord.js fork for creating selfbots",
   "main": "./src/index.js",
   "types": "./typings/index.d.ts",
   "scripts": {
-    "all": "npm run build && npm publish",
-    "test": "npm run lint:all && npm run docs:test && npm run test:typescript",
-    "fix:all": "npm run lint:fix && npm run lint:typings:fix && npm run format",
+    "all": "bun run build && bun publish",
+    "test": "bun run lint:all && bun run docs:test && bun run test:typescript",
+    "fix:all": "bun run lint:fix && bun run lint:typings:fix && bun run format",
     "test:typescript": "tsc --noEmit && tsd",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:typings": "tslint typings/index.d.ts",
     "lint:typings:fix": "tslint typings/index.d.ts --fix",
     "format": "prettier --write src/**/*.js typings/**/*.ts",
-    "lint:all": "npm run lint &&  npm run lint:typings", 
+    "lint:all": "bun run lint && bun run lint:typings",
     "docs": "docgen --source src --custom docs/index.yml --output docs/main.json",
     "docs:test": "docgen --source src --custom docs/index.yml",
-    "build": "npm run lint:fix && npm run lint:typings:fix && npm run format && npm run docs"
+    "build": "bun run lint:fix && bun run lint:typings:fix && bun run format && bun run docs"
   },
   "files": [
     "src",
@@ -57,18 +57,12 @@
     "@sapphire/shapeshift": "^4.0.0",
     "debug": "^4.4.3",
     "discord-api-types": "^0.38.15",
-    "fetch-cookie": "^3.1.0",
-    "find-process": "^2.0.0",
     "otplib": "^12.0.1",
     "prism-media": "^1.3.5",
     "qrcode": "^1.5.4",
-    "tough-cookie": "^5.1.2",
-    "tree-kill": "^1.2.2",
-    "undici": "^7.11.0",
     "werift-rtp": "^0.8.4"
   },
   "engines": {
-    "node": ">=20.18",
     "bun": ">=1.3.5"
   },
   "devDependencies": {

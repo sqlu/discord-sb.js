@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import {
   blockQuote,
   bold,
@@ -69,11 +71,9 @@ import {
 import { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { AgentOptions } from 'node:https';
-import { Response, ProxyAgent } from 'undici';
 import { Readable, Writable, Stream } from 'node:stream';
 import { MessagePort, Worker } from 'node:worker_threads';
 import { authenticator } from 'otplib';
-import { CookieJar } from 'tough-cookie';
 import { RtpPacket } from 'werift-rtp';
 import * as WebSocket from 'ws';
 import {
@@ -526,6 +526,17 @@ export abstract class Base {
   public readonly client: Client;
   public toJSON(...props: Record<string, boolean | string>[]): unknown;
   public valueOf(): string;
+}
+
+export interface CookieJar {
+  get(name: string): string | null;
+  has(name: string): boolean;
+  set(nameOrOptions: string | Record<string, unknown>, value?: string, options?: Record<string, unknown>): void;
+  delete(nameOrOptions: string | Record<string, unknown>, options?: Record<string, unknown>): void;
+  toSetCookieHeaders(): string[];
+  toJSON(): Record<string, string>;
+  readonly size: number;
+  [Symbol.iterator](): IterableIterator<[string, string]>;
 }
 
 export class RESTManager {
@@ -1688,6 +1699,7 @@ export class Guild extends AnonymousGuild {
   public leave(): Promise<Guild>;
   public disableInvites(disabled?: boolean): Promise<Guild>;
   public setIncidentActions(incidentActions: IncidentActionsEditOptions): Promise<IncidentActions>;
+  public markAutoModerationFalseAlarm(alertMessageId: Snowflake, reason?: string): Promise<void>;
   public setAFKChannel(afkChannel: VoiceChannelResolvable | null, reason?: string): Promise<Guild>;
   public setAFKTimeout(afkTimeout: number, reason?: string): Promise<Guild>;
   public setBanner(banner: BufferResolvable | Base64Resolvable | null, reason?: string): Promise<Guild>;
@@ -2383,6 +2395,8 @@ export class Message<Cached extends boolean = boolean> extends Base {
   ): Promise<Message | Modal>;
   public markUnread(): Promise<void>;
   public markRead(): Promise<void>;
+  public isAutoModerationNotification(): boolean;
+  public markAutoModerationFalseAlarm(reason?: string): Promise<void>;
   public report(breadcrumbs: number[], elements?: object): Promise<{ report_id: Snowflake }>;
   public vote(...ids: number[]): Promise<void>;
 }
@@ -5135,6 +5149,11 @@ export class GuildManager extends CachedManager<Snowflake, Guild, GuildResolvabl
     guild: GuildResolvable,
     incidentActions: IncidentActionsEditOptions
   ): Promise<IncidentActions>;
+  public markAutoModerationFalseAlarm(
+    guild: GuildResolvable,
+    alertMessageId: Snowflake,
+    reason?: string
+  ): Promise<void>;
 }
 
 export class GuildMemberManager extends CachedManager<Snowflake, GuildMember, GuildMemberResolvable> {
@@ -7547,8 +7566,20 @@ export interface HTTPErrorData {
   headers?: Record<string, string>;
 }
 
+export type ProxyAgentOptions =
+  | string
+  | URL
+  | {
+      uri: string;
+      headers?: Record<string, string>;
+    }
+  | {
+      url: string;
+      headers?: Record<string, string>;
+    };
+
 export interface HTTPOptions {
-  agent?: Omit<ProxyAgent.Options, 'keepAlive'>;
+  agent?: ProxyAgentOptions;
   api?: string;
   version?: number;
   host?: string;

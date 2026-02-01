@@ -134,16 +134,15 @@ const Intents = require('./Intents');
  */
 
 /**
- * ProxyAgent options.
+ * Proxy options compatible with Bun's fetch `proxy` setting.
  * @typedef {Object} ProxyAgentOptions
- * @see {@link https://github.com/nodejs/undici/blob/main/docs/docs/api/ProxyAgent.md}
  */
 
 /**
  * HTTP options
  * @typedef {Object} HTTPOptions
  * @property {number} [version=9] API version to use
- * @property {ProxyAgentOptions} [agent={}] ProxyAgent options
+ * @property {ProxyAgentOptions} [agent={}] Proxy options for Bun fetch
  * @property {string} [api='https://discord.com/api'] Base URL of the API
  * @property {string} [cdn='https://cdn.discordapp.com'] Base URL of the CDN
  * @property {string} [invite='https://discord.gg'] Base URL of invites

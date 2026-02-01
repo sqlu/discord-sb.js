@@ -333,6 +333,20 @@ class GuildManager extends CachedManager {
 
     return parsedData;
   }
+
+  /**
+   * Marks an AutoMod alert message as a false alarm.
+   * @param {GuildResolvable} guild The guild
+   * @param {Snowflake} alertMessageId The AutoMod alert system message id
+   * @param {string} [reason] Reason for reporting a false alarm
+   * @returns {Promise<void>}
+   */
+  async markAutoModerationFalseAlarm(guild, alertMessageId, reason) {
+    const guildId = this.resolveId(guild);
+    const data = { alert_message_id: alertMessageId };
+    if (typeof reason !== 'undefined') data.reason = reason;
+    await this.client.api.guilds(guildId)['auto-moderation']['false-alarm'].post({ data });
+  }
 }
 
 module.exports = GuildManager;

@@ -1012,6 +1012,16 @@ class Message extends Base {
   }
 
   /**
+   * Whether this message is an AutoMod system notification.
+   * @returns {boolean}
+   */
+  isAutoModerationNotification() {
+    return this.embeds.some(
+      embed => embed.type === 'auto_moderation_notification' || embed.type === 'auto_moderation_message',
+    );
+  }
+
+  /**
    * Used mainly internally. Whether two messages are identical in properties. If you want to compare messages
    * without checking all the properties, use `message.id === message2.id`, which is much more efficient. This
    * method allows you to see if there are differences in content, embeds, attachments, nonce and tts properties.
@@ -1216,6 +1226,16 @@ class Message extends Base {
         token: null,
       },
     });
+  }
+
+  /**
+   * Marks this AutoMod notification as a false alarm.
+   * @param {string} [reason] Reason for reporting a false alarm
+   * @returns {Promise<void>}
+   */
+  markAutoModerationFalseAlarm(reason) {
+    if (!this.guildId) throw new Error('MESSAGE_GUILD_ONLY');
+    return this.client.guilds.markAutoModerationFalseAlarm(this.guildId, this.id, reason);
   }
 
   /**

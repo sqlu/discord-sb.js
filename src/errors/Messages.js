@@ -88,6 +88,7 @@ const Messages = {
   MESSAGE_BULK_DELETE_TYPE: 'The messages must be an Array, Collection, or number.',
   MESSAGE_NONCE_TYPE: 'Message nonce must be an integer or a string.',
   MESSAGE_CONTENT_TYPE: 'Message content must be a non-empty string.',
+  MESSAGE_GUILD_ONLY: 'This action can only be performed on a guild message.',
 
   SPLIT_MAX_LEN: 'Chunk exceeds the max length and contains no split characters.',
 

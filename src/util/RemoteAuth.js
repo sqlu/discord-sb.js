@@ -4,10 +4,12 @@ const { Buffer } = require('node:buffer');
 const crypto = require('node:crypto');
 const EventEmitter = require('node:events');
 const { setTimeout } = require('node:timers');
-const { fetch } = require('undici');
 const { UserAgent } = require('./Constants');
+const { getNativeFetch } = require('./FetchUtil');
 const Options = require('./Options');
 const { WebSocket } = require('../WebSocket');
+
+const fetch = getNativeFetch();
 
 const defaultClientOptions = Options.createDefault();
 const superPropertiesBase64 = Buffer.from(JSON.stringify(defaultClientOptions.ws.properties), 'ascii').toString(

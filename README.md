@@ -9,7 +9,7 @@
 
 **Welcome to `discord-sb.js`, built on `discord.js@13.17` with select backports from `discord.js@14.21.0`.**
 
-- A maintained Node.js fork that lets user accounts talk to the Discord API v9.
+- A Bun-only fork that lets user accounts talk to the Discord API v9.
 
 > [!IMPORTANT]  
 > This codebase is derived from the archived project [discord.js-selfbot-v13](https://github.com/aiko-chan-ai/discord.js-selfbot-v13).
@@ -119,10 +119,10 @@
 ## Installation
 
 > [!NOTE]  
-> Requires Node.js 20.18.0 or later.
+> Requires Bun 1.3.5 or later. This build is Bun-only (Node.js is not supported).
 
 ```sh-session
-npm install discord-sb.js@latest
+bun add discord-sb.js@latest
 ```
 
 ## Example

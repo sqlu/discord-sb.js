@@ -11,7 +11,11 @@
 	},
 	"env": {
 		"es2021": true,
-		"node": true
+		"node": true,
+		"browser": true
+	},
+	"globals": {
+		"Bun": "readonly"
 	},
 	"ignorePatterns": [
 		"**/src/util/Voice.js",
