@@ -146,6 +146,15 @@ class GroupDMChannel extends Channel {
   }
 
   /**
+   * Leave this Group DM Channel.
+   * @param {?boolean} slient Leave without notifying other members
+   * @returns {Promise<GroupDMChannel>}
+   */
+  leave(slient = false) {
+    return this.delete(slient);
+  }
+
+  /**
    * When concatenated with a string, this automatically returns the recipient's mention instead of the
    * GroupDMChannel object.
    * @returns {string}
@@ -294,6 +303,15 @@ class GroupDMChannel extends Channel {
     else code = invite;
     await this.client.api.channels(this.id).invites[invite].delete();
     return this;
+  }
+
+  /**
+   * @deprecated Use {@link GroupDMChannel#removeInvite} instead.
+   * @param {InviteResolvable} invite Invite to remove from the channel
+   * @returns {Promise<GroupDMChannel>}
+   */
+  deleteInvite(invite) {
+    return this.removeInvite(invite);
   }
 
   /**
