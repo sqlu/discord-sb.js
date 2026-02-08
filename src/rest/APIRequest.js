@@ -49,18 +49,22 @@ class APIRequest {
     this.retries = 0;
 
     this.fullUserAgent = this.client.options.http.headers['User-Agent'];
-
-    this.client.options.ws.properties.browser_user_agent = this.fullUserAgent;
-    this.superProperties = Buffer.from(JSON.stringify(this.client.options.ws.properties), 'ascii').toString('base64');
+    this.superProperties = rest.getSuperProperties(this.fullUserAgent);
 
     let queryString = '';
     if (options.query) {
-      const query = Object.entries(options.query)
-        .filter(([, value]) => value !== null && typeof value !== 'undefined')
-        .flatMap(([key, value]) => (Array.isArray(value) ? value.map(v => [key, v]) : [[key, value]]));
-      queryString = new URLSearchParams(query).toString();
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(options.query)) {
+        if (value === null || typeof value === 'undefined') continue;
+        if (Array.isArray(value)) {
+          for (const v of value) params.append(key, v);
+        } else {
+          params.append(key, value);
+        }
+      }
+      queryString = params.toString();
     }
-    this.path = `${path}${queryString && `?${queryString}`}`;
+    this.path = queryString ? `${path}?${queryString}` : path;
   }
 
   getProxyConfig() {

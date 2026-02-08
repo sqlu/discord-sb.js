@@ -539,6 +539,43 @@ export interface CookieJar {
   [Symbol.iterator](): IterableIterator<[string, string]>;
 }
 
+export interface RESTFile {
+  file: unknown;
+  name?: string;
+  key?: string;
+}
+
+export interface RESTRequestOptions {
+  auth?: boolean;
+  versioned?: boolean;
+  query?: Record<string, unknown>;
+  data?: unknown;
+  files?: RESTFile[];
+  headers?: Record<string, string>;
+  reason?: string;
+  webhook?: boolean;
+  dontUsePayloadJSON?: boolean;
+  usePayloadJSON?: boolean;
+  DiscordContext?: Record<string, unknown>;
+  mfaToken?: string;
+}
+
+export type APIRouteSegment = string | number | bigint;
+
+export interface APIRouter {
+  (...segments: Array<APIRouteSegment | null | undefined>): APIRouter;
+  [key: string]: APIRouter;
+  get: APIRouteMethod;
+  post: APIRouteMethod;
+  put: APIRouteMethod;
+  patch: APIRouteMethod;
+  delete: APIRouteMethod;
+}
+
+export interface APIRouteMethod extends APIRouter {
+  (options?: RESTRequestOptions): Promise<unknown>;
+}
+
 export class RESTManager {
   private constructor(client: Client);
   public readonly client: Client;
@@ -547,7 +584,9 @@ export class RESTManager {
   public cookieJar: CookieJar;
   public fetch: typeof globalThis.fetch;
   public getAuth(): string;
-  public readonly api: unknown;
+  public invalidateSuperProperties(): void;
+  public getSuperProperties(userAgent: string): string;
+  public readonly api: APIRouter;
   public readonly cdn: unknown;
 }
 

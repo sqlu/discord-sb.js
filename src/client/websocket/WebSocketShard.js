@@ -710,6 +710,7 @@ class WebSocketShard extends EventEmitter {
         client.options.ws.properties[k.slice(1)] = client.options.ws.properties[k];
         delete client.options.ws.properties[k];
       });
+    if (typeof client.rest.invalidateSuperProperties === 'function') client.rest.invalidateSuperProperties();
 
     // Clone the identify payload and assign the token and shard info
     const d = {

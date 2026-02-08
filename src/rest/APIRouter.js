@@ -1,6 +1,6 @@
+/* eslint-disable space-before-function-paren */
 'use strict';
 
-const noop = () => {}; // eslint-disable-line no-empty-function
 const methods = new Set(['get', 'post', 'delete', 'patch', 'put']);
 const reflectors = new Set([
   'toString',
@@ -12,48 +12,83 @@ const reflectors = new Set([
 ]);
 const idRouteRegex = /\d{16,19}/;
 const majorIdRoutes = new Set(['channels', 'guilds']);
-
-function buildRouteBucket(route) {
-  const routeBucket = [];
-  for (let i = 0; i < route.length; i++) {
-    const previous = route[i - 1];
-    if (previous === 'reactions') break;
-    const segment = route[i];
-    if (idRouteRegex.test(segment) && !majorIdRoutes.has(previous)) routeBucket.push(':id');
-    else routeBucket.push(segment);
-  }
-  return routeBucket;
-}
+const kState = Symbol('api_route_state');
 
 function buildRoute(manager) {
-  const route = [''];
+  const createProxy = state => {
+    // The target must be callable for the `apply` trap to work.
+    // eslint-disable-next-line func-style
+    const target = function () {}; // eslint-disable-line func-names
+    Object.defineProperty(target, kState, { value: state, writable: true });
+    return new Proxy(target, handler);
+  };
+
+  const appendSegment = (state, segment) => {
+    const seg = String(segment);
+
+    const nextPath = `${state.path}/${seg}`;
+    const nextPrev = seg;
+
+    const freezeBuckets = state.bucketFrozen || state.prev === 'reactions';
+    if (freezeBuckets) {
+      return {
+        path: nextPath,
+        bucketRoute: state.bucketRoute,
+        bucketFrozen: true,
+        prev: nextPrev,
+      };
+    }
+
+    const bucketSegment = idRouteRegex.test(seg) && !majorIdRoutes.has(state.prev) ? ':id' : seg;
+    const nextBucket = `${state.bucketRoute}/${bucketSegment}`;
+
+    return {
+      path: nextPath,
+      bucketRoute: nextBucket,
+      bucketFrozen: false,
+      prev: nextPrev,
+    };
+  };
+
   const handler = {
     get(target, name) {
-      if (reflectors.has(name)) return () => route.join('/');
+      const state = target[kState];
+
+      // Avoid the proxy being treated as a thenable by Promise resolution / `await`.
+      if (name === 'then') return undefined;
+
+      if (reflectors.has(name)) return () => state.path;
+
       if (methods.has(name)) {
-        const routeBucket = buildRouteBucket(route);
         return options =>
           manager.request(
             name,
-            route.join('/'),
+            state.path,
             Object.assign(
               {
                 versioned: manager.versioned,
-                route: routeBucket.join('/'),
+                route: state.bucketRoute,
               },
               options,
             ),
           );
       }
-      route.push(name);
-      return new Proxy(noop, handler);
+      if (typeof name === 'symbol') return undefined;
+
+      return createProxy(appendSegment(state, name));
     },
     apply(target, _, args) {
-      route.push(...args.filter(x => x != null)); // eslint-disable-line eqeqeq
-      return new Proxy(noop, handler);
+      let state = target[kState];
+      for (const arg of args) {
+        // eslint-disable-next-line eqeqeq
+        if (arg == null) continue;
+        state = appendSegment(state, arg);
+      }
+      return createProxy(state);
     },
   };
-  return new Proxy(noop, handler);
+
+  return createProxy({ path: '', bucketRoute: '', bucketFrozen: false, prev: '' });
 }
 
 module.exports = buildRoute;
