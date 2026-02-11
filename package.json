@@ -1,12 +1,13 @@
 {
   "name": "discord-sb.js",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "An unofficial discord.js fork for creating selfbots",
   "main": "./src/index.js",
   "types": "./typings/index.d.ts",
   "scripts": {
     "all": "bun run build && bun publish",
     "test": "bun run lint:all && bun run docs:test && bun run test:typescript",
+    "test:unit": "bun test",
     "fix:all": "bun run lint:fix && bun run lint:typings:fix && bun run format",
     "test:typescript": "tsc --noEmit && tsd",
     "lint": "eslint .",

@@ -4,15 +4,16 @@ const EventEmitter = require('events');
 const { getCiphers } = require('node:crypto');
 const { setTimeout } = require('node:timers');
 const { Collection } = require('@discordjs/collection');
+const StreamEventRouter = require('./StreamEventRouter');
 const VoiceUDP = require('./networking/VoiceUDPClient');
 const VoiceWebSocket = require('./networking/VoiceWebSocket');
 const MediaPlayer = require('./player/MediaPlayer');
 const VoiceReceiver = require('./receiver/Receiver');
-const { parseStreamKey } = require('./util/Function');
 const PlayInterface = require('./util/PlayInterface');
 const Silence = require('./util/Silence');
 const { Error } = require('../../errors');
 const { Opcodes, VoiceOpcodes, VoiceStatus, Events } = require('../../util/Constants');
+const { hasListener } = require('../../util/ListenerUtil');
 const Speaking = require('../../util/Speaking');
 const Util = require('../../util/Util');
 
@@ -85,6 +86,7 @@ class VoiceConnection extends EventEmitter {
      * @private
      */
     this.authentication = {};
+    this._voiceSequence = -1;
 
     /**
      * The audio player for this voice connection
@@ -98,7 +100,7 @@ class VoiceConnection extends EventEmitter {
        * @event VoiceConnection#debug
        * @param {string} message The debug message
        */
-      this.emit('debug', `media player - ${m}`);
+      this._debug(`media player - ${m}`);
     });
 
     this.player.on('error', e => {
@@ -166,6 +168,7 @@ class VoiceConnection extends EventEmitter {
      * @type {Collection<Snowflake, StreamConnectionReadonly>}
      */
     this.streamWatchConnection = new Collection();
+    this._streamEventRouter = new StreamEventRouter(this);
   }
 
   /**
@@ -195,6 +198,22 @@ class VoiceConnection extends EventEmitter {
     return this.player.videoDispatcher;
   }
 
+  hasDebugListeners() {
+    const forwardingListeners = this._voiceDebugForwarder ? 1 : 0;
+    const hasClientDebugListener = hasListener(this.client, Events.DEBUG);
+    return this.listenerCount('debug') > forwardingListeners || hasClientDebugListener;
+  }
+
+  _debug(message) {
+    if (!this.hasDebugListeners()) return;
+    this.emit('debug', message);
+  }
+
+  _debugLazy(factory) {
+    if (!this.hasDebugListeners()) return;
+    this.emit('debug', factory());
+  }
+
   /**
    * Sets whether the voice connection should display as "speaking", "soundshare" or "none".
    * @param {BitFieldResolvable} value The new speaking state
@@ -213,7 +232,7 @@ class VoiceConnection extends EventEmitter {
         },
       })
       .catch(e => {
-        this.emit('debug', e);
+        this._debug(e);
       });
   }
 
@@ -248,7 +267,7 @@ class VoiceConnection extends EventEmitter {
           },
         })
         .catch(e => {
-          this.emit('debug', e);
+          this._debug(e);
         });
     } else {
       this.sockets.ws
@@ -278,7 +297,7 @@ class VoiceConnection extends EventEmitter {
           },
         })
         .catch(e => {
-          this.emit('debug', e);
+          this._debug(e);
         });
     }
   }
@@ -310,7 +329,7 @@ class VoiceConnection extends EventEmitter {
       options,
     );
 
-    this.emit('debug', `Sending voice state update: ${JSON.stringify(options)}`);
+    this._debugLazy(() => `Sending voice state update: ${JSON.stringify(options)}`);
 
     return this.channel.client.ws.broadcast({
       op: Opcodes.VOICE_STATE_UPDATE,
@@ -326,7 +345,7 @@ class VoiceConnection extends EventEmitter {
    * @private
    */
   setTokenAndEndpoint(token, endpoint) {
-    this.emit('debug', `Token "${token}" and endpoint "${endpoint}"`);
+    this._debug(`Token "${token}" and endpoint "${endpoint}"`);
     if (!endpoint) {
       // Signifies awaiting endpoint stage
       return;
@@ -338,7 +357,7 @@ class VoiceConnection extends EventEmitter {
     }
 
     endpoint = endpoint.match(/([^:]*)/)[0];
-    this.emit('debug', `Endpoint resolved as ${endpoint}`);
+    this._debug(`Endpoint resolved as ${endpoint}`);
 
     if (!endpoint) {
       this.authenticateFailed('VOICE_INVALID_ENDPOINT');
@@ -360,7 +379,7 @@ class VoiceConnection extends EventEmitter {
    * @private
    */
   setSessionId(sessionId) {
-    this.emit('debug', `Setting sessionId ${sessionId} (stored as "${this.authentication.sessionId}")`);
+    this._debug(`Setting sessionId ${sessionId} (stored as "${this.authentication.sessionId}")`);
     if (!sessionId) {
       this.authenticateFailed('VOICE_SESSION_ABSENT');
       return;
@@ -386,7 +405,7 @@ class VoiceConnection extends EventEmitter {
    */
   checkAuthenticated() {
     const { token, endpoint, sessionId } = this.authentication;
-    this.emit('debug', `Authenticated with sessionId ${sessionId}`);
+    this._debug(`Authenticated with sessionId ${sessionId}`);
     if (token && endpoint && sessionId) {
       this.status = VoiceStatus.CONNECTING;
       /**
@@ -405,7 +424,7 @@ class VoiceConnection extends EventEmitter {
    */
   authenticateFailed(reason) {
     clearTimeout(this.connectTimeout);
-    this.emit('debug', `Authenticate failed - ${reason}`);
+    this._debug(`Authenticate failed - ${reason}`);
     if (this.status === VoiceStatus.AUTHENTICATING) {
       /**
        * Emitted when we fail to initiate a voice connection.
@@ -455,7 +474,7 @@ class VoiceConnection extends EventEmitter {
     this.authentication.endpoint = endpoint;
     this.speaking = new Speaking().freeze();
     this.status = VoiceStatus.RECONNECTING;
-    this.emit('debug', `Reconnecting to ${endpoint}`);
+    this._debug(`Reconnecting to ${endpoint}`);
     /**
      * Emitted when the voice connection is reconnecting (typically after a region change).
      * @event VoiceConnection#reconnecting
@@ -469,7 +488,7 @@ class VoiceConnection extends EventEmitter {
    */
   disconnect() {
     this.emit('closing');
-    this.emit('debug', 'disconnect() triggered');
+    this._debug('disconnect() triggered');
     clearTimeout(this.connectTimeout);
     const conn = this.voiceManager.connection;
     if (conn === this) this.voiceManager.connection = null;
@@ -502,7 +521,8 @@ class VoiceConnection extends EventEmitter {
     this.speaking = new Speaking().freeze();
     const { ws, udp } = this.sockets;
 
-    this.emit('debug', 'Connection clean up');
+    this._debug('Connection clean up');
+    this._streamEventRouter.detach();
 
     if (ws) {
       ws.removeAllListeners('error');
@@ -523,7 +543,7 @@ class VoiceConnection extends EventEmitter {
    * @private
    */
   connect() {
-    this.emit('debug', `Connect triggered`);
+    this._debug('Connect triggered');
     if (this.status !== VoiceStatus.RECONNECTING) {
       if (this.sockets.ws) throw new Error('WS_CONNECTION_EXISTS');
       if (this.sockets.udp) throw new Error('UDP_CONNECTION_EXISTS');
@@ -537,11 +557,12 @@ class VoiceConnection extends EventEmitter {
 
     const { ws, udp } = this.sockets;
 
-    ws.on('debug', msg => this.emit('debug', msg));
-    udp.on('debug', msg => this.emit('debug', msg));
+    ws.on('debug', msg => this._debug(msg));
+    udp.on('debug', msg => this._debug(msg));
     ws.on('error', err => this.emit('error', err));
     udp.on('error', err => this.emit('error', err));
     ws.on('ready', this.onReady.bind(this));
+    ws.on('resumed', this.onResumed.bind(this));
     ws.on('sessionDescription', this.onSessionDescription.bind(this));
     ws.on('startSpeaking', this.onStartSpeaking.bind(this));
     ws.on('startStreaming', this.onStartStreaming.bind(this));
@@ -559,7 +580,7 @@ class VoiceConnection extends EventEmitter {
     for (let mode of data.modes) {
       if (SUPPORTED_MODES.includes(mode)) {
         this.authentication.mode = mode;
-        this.emit('debug', `Selecting the ${mode} mode`);
+        this._debug(`Selecting the ${mode} mode`);
         break;
       }
     }
@@ -576,7 +597,7 @@ class VoiceConnection extends EventEmitter {
     this.status = VoiceStatus.CONNECTED;
     const ready = () => {
       clearTimeout(this.connectTimeout);
-      this.emit('debug', `Ready with authentication details: ${JSON.stringify(this.authentication)}`);
+      this._debugLazy(() => `Ready with authentication details: ${JSON.stringify(this.authentication)}`);
       /**
        * Emitted once the connection is ready, when a promise to join a voice channel resolves,
        * the connection will already be ready.
@@ -591,6 +612,13 @@ class VoiceConnection extends EventEmitter {
       const dispatcher = this.playAudio(new SingleSilence(), { type: 'opus', volume: false });
       dispatcher.once('finish', ready);
     }
+  }
+
+  onResumed() {
+    this.status = VoiceStatus.CONNECTED;
+    clearTimeout(this.connectTimeout);
+    this._debug('[WS] Voice session resumed');
+    this.emit('resumed');
   }
 
   onStartSpeaking({ user_id, ssrc, speaking }) {
@@ -680,77 +708,22 @@ class VoiceConnection extends EventEmitter {
       } else {
         const connection = (this.streamConnection = new StreamConnection(this.voiceManager, this.channel, this));
         connection.setVideoCodec(this.videoCodec); // Sync :?
-        // Setup event...
-        if (!this.eventHook) {
-          this.eventHook = true; // Dont listen this event two times :/
-          this.channel.client.on('raw', packet => {
-            if (typeof packet !== 'object' || !packet.t || !packet.d || !packet.d?.stream_key) {
-              return;
-            }
-            const { t: event, d: data } = packet;
-            const StreamKey = parseStreamKey(data.stream_key);
-            if (
-              StreamKey.userId === this.channel.client.user.id &&
-              this.channel.id == StreamKey.channelId &&
-              this.streamConnection
-            ) {
-              // Current user stream
-              switch (event) {
-                case 'STREAM_CREATE': {
-                  this.streamConnection.setSessionId(this.authentication.sessionId);
-                  this.streamConnection.serverId = data.rtc_server_id;
-                  break;
-                }
-                case 'STREAM_SERVER_UPDATE': {
-                  this.streamConnection.setTokenAndEndpoint(data.token, data.endpoint);
-                  break;
-                }
-                case 'STREAM_DELETE': {
-                  this.streamConnection.disconnect();
-                  break;
-                }
-                case 'STREAM_UPDATE': {
-                  this.streamConnection.update(data);
-                  break;
-                }
-              }
-            }
-            if (this.streamWatchConnection.has(StreamKey.userId) && this.channel.id == StreamKey.channelId) {
-              const streamConnection = this.streamWatchConnection.get(StreamKey.userId);
-              // Watch user stream
-              switch (event) {
-                case 'STREAM_CREATE': {
-                  streamConnection.setSessionId(this.authentication.sessionId);
-                  streamConnection.serverId = data.rtc_server_id;
-                  break;
-                }
-                case 'STREAM_SERVER_UPDATE': {
-                  streamConnection.setTokenAndEndpoint(data.token, data.endpoint);
-                  break;
-                }
-                case 'STREAM_DELETE': {
-                  streamConnection.disconnect();
-                  streamConnection.receiver.packets.destroyAllStream();
-                  break;
-                }
-                case 'STREAM_UPDATE': {
-                  streamConnection.update(data);
-                  break;
-                }
-              }
-            }
-          });
-        }
+        this._streamEventRouter.attach();
 
         connection.sendSignalScreenshare();
         connection.sendScreenshareState(true);
 
-        connection.on('debug', msg =>
-          this.channel.client.emit(
-            'debug',
-            `[VOICE STREAM (${this.channel.guild?.id || this.channel.id}:${connection.status})]: ${msg}`,
-          ),
-        );
+        const forwardStreamDebug = msg => {
+          if (hasListener(this.channel.client, Events.DEBUG)) {
+            this.channel.client.emit(
+              Events.DEBUG,
+              `[VOICE STREAM (${this.channel.guild?.id || this.channel.id}:${connection.status})]: ${msg}`,
+            );
+          }
+        };
+        forwardStreamDebug.__voiceForwarder = true;
+        connection.on('debug', forwardStreamDebug);
+        connection._voiceDebugForwarder = forwardStreamDebug;
         connection.once('failed', reason => {
           this.streamConnection = null;
           reject(reason);
@@ -794,78 +767,23 @@ class VoiceConnection extends EventEmitter {
         const connection = new StreamConnectionReadonly(this.voiceManager, this.channel, this, userId);
         this.streamWatchConnection.set(userId, connection);
         connection.setVideoCodec(this.videoCodec);
-        // Setup event...
-        if (!this.eventHook) {
-          this.eventHook = true; // Dont listen this event two times :/
-          this.channel.client.on('raw', packet => {
-            if (typeof packet !== 'object' || !packet.t || !packet.d || !packet.d?.stream_key) {
-              return;
-            }
-            const { t: event, d: data } = packet;
-            const StreamKey = parseStreamKey(data.stream_key);
-            if (
-              StreamKey.userId === this.channel.client.user.id &&
-              this.channel.id == StreamKey.channelId &&
-              this.streamConnection
-            ) {
-              // Current user stream
-              switch (event) {
-                case 'STREAM_CREATE': {
-                  this.streamConnection.setSessionId(this.authentication.sessionId);
-                  this.streamConnection.serverId = data.rtc_server_id;
-                  break;
-                }
-                case 'STREAM_SERVER_UPDATE': {
-                  this.streamConnection.setTokenAndEndpoint(data.token, data.endpoint);
-                  break;
-                }
-                case 'STREAM_DELETE': {
-                  this.streamConnection.disconnect();
-                  break;
-                }
-                case 'STREAM_UPDATE': {
-                  this.streamConnection.update(data);
-                  break;
-                }
-              }
-            }
-            if (this.streamWatchConnection.has(StreamKey.userId) && this.channel.id == StreamKey.channelId) {
-              const streamConnection = this.streamWatchConnection.get(StreamKey.userId);
-              // Watch user stream
-              switch (event) {
-                case 'STREAM_CREATE': {
-                  streamConnection.setSessionId(this.authentication.sessionId);
-                  streamConnection.serverId = data.rtc_server_id;
-                  break;
-                }
-                case 'STREAM_SERVER_UPDATE': {
-                  streamConnection.setTokenAndEndpoint(data.token, data.endpoint);
-                  break;
-                }
-                case 'STREAM_DELETE': {
-                  streamConnection.disconnect();
-                  streamConnection.receiver.packets.destroyAllStream();
-                  break;
-                }
-                case 'STREAM_UPDATE': {
-                  streamConnection.update(data);
-                  break;
-                }
-              }
-            }
-          });
-        }
+        this._streamEventRouter.attach();
 
         connection.sendSignalScreenshare();
 
-        connection.on('debug', msg =>
-          this.channel.client.emit(
-            'debug',
-            `[VOICE STREAM WATCH (${userId}>${this.channel.guild?.id || this.channel.id}:${
-              connection.status
-            })]: ${msg}`,
-          ),
-        );
+        const forwardStreamWatchDebug = msg => {
+          if (hasListener(this.channel.client, Events.DEBUG)) {
+            this.channel.client.emit(
+              Events.DEBUG,
+              `[VOICE STREAM WATCH (${userId}>${this.channel.guild?.id || this.channel.id}:${
+                connection.status
+              })]: ${msg}`,
+            );
+          }
+        };
+        forwardStreamWatchDebug.__voiceForwarder = true;
+        connection.on('debug', forwardStreamWatchDebug);
+        connection._voiceDebugForwarder = forwardStreamWatchDebug;
         connection.once('failed', reason => {
           this.streamWatchConnection.delete(userId);
           reject(reason);
@@ -986,7 +904,7 @@ class StreamConnection extends VoiceConnection {
   disconnect() {
     if (this.#requestDisconnect) return;
     this.emit('closing');
-    this.emit('debug', 'Stream: disconnect() triggered');
+    this._debug('Stream: disconnect() triggered');
     clearTimeout(this.connectTimeout);
     if (this.voiceConnection.streamConnection === this) this.voiceConnection.streamConnection = null;
     this.sendStopScreenshare();
@@ -1004,7 +922,7 @@ class StreamConnection extends VoiceConnection {
       channel_id: this.channel.id,
       preferred_region: null,
     };
-    this.emit('debug', `Signal Stream: ${JSON.stringify(data)}`);
+    this._debugLazy(() => `Signal Stream: ${JSON.stringify(data)}`);
     return this.channel.client.ws.broadcast({
       op: Opcodes.STREAM_CREATE,
       d: data,
@@ -1177,7 +1095,7 @@ class StreamConnectionReadonly extends VoiceConnection {
   disconnect() {
     if (this.#requestDisconnect) return;
     this.emit('closing');
-    this.emit('debug', 'Stream: disconnect() triggered');
+    this._debug('Stream: disconnect() triggered');
     clearTimeout(this.connectTimeout);
     this.voiceConnection.streamWatchConnection.delete(this.userId);
     this.sendStopScreenshare();
@@ -1189,7 +1107,7 @@ class StreamConnectionReadonly extends VoiceConnection {
    * @returns {void}
    */
   sendSignalScreenshare() {
-    this.emit('debug', `Signal Stream Watch: ${this.streamKey}`);
+    this._debug(`Signal Stream Watch: ${this.streamKey}`);
     return this.channel.client.ws.broadcast({
       op: Opcodes.STREAM_WATCH,
       d: {

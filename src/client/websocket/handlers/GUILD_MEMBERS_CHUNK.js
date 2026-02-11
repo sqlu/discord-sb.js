@@ -2,16 +2,22 @@
 
 const { Collection } = require('@discordjs/collection');
 const { Events } = require('../../../util/Constants');
+const { hasListener } = require('../../../util/ListenerUtil');
 
 module.exports = (client, { d: data }) => {
   const guild = client.guilds.cache.get(data.guild_id);
   if (!guild) return;
-  const members = new Collection();
+  const hasChunkListener = hasListener(client, Events.GUILD_MEMBERS_CHUNK);
+  const members = hasChunkListener ? new Collection() : null;
 
-  for (const member of data.members) members.set(member.user.id, guild.members._add(member));
+  for (const member of data.members) {
+    const cachedMember = guild.members._add(member);
+    if (members) members.set(member.user.id, cachedMember);
+  }
   if (data.presences) {
     for (const presence of data.presences) guild.presences._add(Object.assign(presence, { guild }));
   }
+  if (!hasChunkListener) return;
 
   /**
    * Represents the properties of a guild members chunk

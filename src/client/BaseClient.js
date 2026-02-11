@@ -14,6 +14,10 @@ class BaseClient extends EventEmitter {
   constructor(options = {}) {
     super({ captureRejections: true });
 
+    this._listenerCountsFast = new Map();
+    this.on('newListener', this._onNewListener.bind(this));
+    this.on('removeListener', this._onRemoveListener.bind(this));
+
     if (options.intents) {
       process.emitWarning('Intents is not available.', 'DeprecationWarning');
     }
@@ -30,6 +34,26 @@ class BaseClient extends EventEmitter {
      * @private
      */
     this.rest = new RESTManager(this);
+  }
+
+  _onNewListener(event) {
+    if (event === 'newListener' || event === 'removeListener') return;
+    const current = this._listenerCountsFast.get(event) ?? 0;
+    this._listenerCountsFast.set(event, current + 1);
+  }
+
+  _onRemoveListener(event) {
+    if (event === 'newListener' || event === 'removeListener') return;
+    const current = this._listenerCountsFast.get(event) ?? 0;
+    if (current <= 1) {
+      this._listenerCountsFast.delete(event);
+    } else {
+      this._listenerCountsFast.set(event, current - 1);
+    }
+  }
+
+  hasListenerFast(event) {
+    return (this._listenerCountsFast.get(event) ?? 0) > 0;
   }
 
   /**

@@ -1,6 +1,16 @@
 'use strict';
 
+const { Events } = require('../../../util/Constants');
+const { hasListener } = require('../../../util/ListenerUtil');
+
 module.exports = (client, { d: data }) => {
+  const hasDebugListener = hasListener(client, Events.DEBUG);
+  const emitDebug = message => {
+    if (hasDebugListener) {
+      client.emit(Events.DEBUG, message);
+    }
+  };
+
   let msg;
   switch (data.required_action) {
     case undefined:
@@ -20,16 +30,10 @@ module.exports = (client, { d: data }) => {
           },
         })
         .then(() => {
-          client.emit(
-            'debug',
-            '[USER_REQUIRED_ACTION] Successfully accepted the new Terms of Service and Privacy Policy.',
-          );
+          emitDebug('[USER_REQUIRED_ACTION] Successfully accepted the new Terms of Service and Privacy Policy.');
         })
         .catch(e => {
-          client.emit(
-            'debug',
-            `[USER_REQUIRED_ACTION] Failed to accept the new Terms of Service and Privacy Policy: ${e}`,
-          );
+          emitDebug(`[USER_REQUIRED_ACTION] Failed to accept the new Terms of Service and Privacy Policy: ${e}`);
         });
       break;
     }
@@ -74,5 +78,5 @@ module.exports = (client, { d: data }) => {
       break;
     }
   }
-  client.emit('debug', `[USER_REQUIRED_ACTION] ${msg}`);
+  emitDebug(`[USER_REQUIRED_ACTION] ${msg}`);
 };

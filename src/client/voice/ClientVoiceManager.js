@@ -3,6 +3,7 @@
 const VoiceConnection = require('./VoiceConnection');
 const { Error } = require('../../errors');
 const { Events } = require('../../util/Constants');
+const { hasListener } = require('../../util/ListenerUtil');
 
 /**
  * Manages voice connections for the client
@@ -42,8 +43,7 @@ class ClientVoiceManager {
 
   onVoiceServer(payload) {
     const { guild_id, channel_id, token, endpoint } = payload;
-    this.client.emit(
-      'debug',
+    this._debug(
       `[VOICE] voiceServer ${channel_id ? 'channel' : 'guild'}: ${
         channel_id || guild_id
       } token: ${token} endpoint: ${endpoint}`,
@@ -68,7 +68,7 @@ class ClientVoiceManager {
     }
     // Main lib
     const connection = this.connection;
-    this.client.emit('debug', `[VOICE] connection? ${!!connection}, ${guild_id} ${session_id} ${channel_id}`);
+    this._debug(`[VOICE] connection? ${!!connection}, ${guild_id} ${session_id} ${channel_id}`);
     if (!connection) return;
     if (!channel_id) {
       connection._disconnect();
@@ -80,7 +80,7 @@ class ClientVoiceManager {
       connection.channel = channel;
       connection.setSessionId(session_id);
     } else {
-      this.client.emit('debug', `[VOICE] disconnecting from guild ${guild_id} as channel ${channel_id} is uncached`);
+      this._debug(`[VOICE] disconnecting from guild ${guild_id} as channel ${channel_id} is uncached`);
       connection.disconnect();
     }
   }
@@ -117,9 +117,14 @@ class ClientVoiceManager {
       } else {
         connection = new VoiceConnection(this, channel);
         if (config?.videoCodec) connection.setVideoCodec(config.videoCodec);
-        connection.on('debug', msg =>
-          this.client.emit('debug', `[VOICE (${channel.guild?.id || channel.id}:${connection.status})]: ${msg}`),
-        );
+        const forwardDebug = msg => {
+          if (hasListener(this.client, Events.DEBUG)) {
+            this.client.emit(Events.DEBUG, `[VOICE (${channel.guild?.id || channel.id}:${connection.status})]: ${msg}`);
+          }
+        };
+        forwardDebug.__voiceForwarder = true;
+        connection.on('debug', forwardDebug);
+        connection._voiceDebugForwarder = forwardDebug;
         connection.authenticate({
           self_mute: Boolean(config.selfMute),
           self_deaf: Boolean(config.selfDeaf),
@@ -145,6 +150,12 @@ class ClientVoiceManager {
         });
       });
     });
+  }
+
+  _debug(message) {
+    if (hasListener(this.client, Events.DEBUG)) {
+      this.client.emit(Events.DEBUG, message);
+    }
   }
 }
 

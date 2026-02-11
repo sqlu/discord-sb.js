@@ -1,6 +1,6 @@
 'use strict';
 
-const { setTimeout } = require('node:timers');
+const { setTimeout: sleep } = require('node:timers/promises');
 const { Collection } = require('@discordjs/collection');
 const BaseManager = require('./BaseManager');
 
@@ -82,10 +82,10 @@ class QuestManager extends BaseManager {
     // Cache quests
     if (data.quests) {
       this.cache.clear();
-      data.quests.forEach(questData => {
+      for (const questData of data.quests) {
         const quest = new Quest(questData);
         this.cache.set(quest.id, quest);
-      });
+      }
     }
 
     return data;
@@ -193,10 +193,8 @@ class QuestManager extends BaseManager {
    * @returns {Promise<Object[]>}
    */
   async getApplicationData(ids) {
-    const query = new URLSearchParams();
-    ids.forEach(id => query.append('application_ids', id));
-
-    return this.client.api.applications.public.get({ query: query.toString() });
+    const applicationIds = Array.isArray(ids) ? ids : [ids];
+    return this.client.api.applications.public.get({ query: { application_ids: applicationIds } });
   }
 
   /**
@@ -268,8 +266,8 @@ class QuestManager extends BaseManager {
    * @returns {Promise<void>}
    * @private
    */
-  async timeout(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  timeout(ms) {
+    return sleep(ms);
   }
 
   /**

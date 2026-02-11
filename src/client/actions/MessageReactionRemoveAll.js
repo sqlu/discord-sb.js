@@ -2,22 +2,25 @@
 
 const Action = require('./Action');
 const { Events } = require('../../util/Constants');
+const { hasListener } = require('../../util/ListenerUtil');
 
 class MessageReactionRemoveAll extends Action {
   handle(data) {
-    // Verify channel
-    const channel = this.getChannel({ id: data.channel_id, ...('guild_id' in data && { guild_id: data.guild_id }) });
+    const hasReactionListener = hasListener(this.client, Events.MESSAGE_REACTION_REMOVE_ALL);
+    const channelData = { id: data.channel_id };
+    if ('guild_id' in data) channelData.guild_id = data.guild_id;
+    const channel = this.getChannel(channelData);
     if (!channel || !channel.isText()) return false;
 
     // Verify message
     const message = this.getMessage(data, channel);
     if (!message) return false;
 
-    // Copy removed reactions to emit for the event.
-    const removed = message.reactions.cache.clone();
+    // Copy removed reactions only when needed for the event payload.
+    const removed = hasReactionListener ? message.reactions.cache.clone() : null;
 
     message.reactions.cache.clear();
-    this.client.emit(Events.MESSAGE_REACTION_REMOVE_ALL, message, removed);
+    if (hasReactionListener) this.client.emit(Events.MESSAGE_REACTION_REMOVE_ALL, message, removed);
 
     return { message };
   }

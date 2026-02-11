@@ -4,7 +4,7 @@ const EventEmitter = require('events');
 const { setTimeout, setInterval } = require('node:timers');
 const WebSocket = require('../../../WebSocket');
 const { Error } = require('../../../errors');
-const { Opcodes, VoiceOpcodes } = require('../../../util/Constants');
+const { VoiceOpcodes, VoiceStatus } = require('../../../util/Constants');
 
 /**
  * Represents a Voice Connection's WebSocket.
@@ -26,7 +26,8 @@ class VoiceWebSocket extends EventEmitter {
      */
     this.attempts = 0;
 
-    this._sequenceNumber = -1;
+    this._sequenceNumber = this.connection._voiceSequence ?? -1;
+    this._resumeAttempted = false;
 
     this.dead = false;
     this.connection.on('closing', this.shutdown.bind(this));
@@ -41,8 +42,22 @@ class VoiceWebSocket extends EventEmitter {
     return this.connection.client;
   }
 
+  _shouldEmitDebug() {
+    return this.connection.hasDebugListeners() || this.listenerCount('debug') > 0;
+  }
+
+  _debug(message) {
+    if (!this._shouldEmitDebug()) return;
+    this.emit('debug', message);
+  }
+
+  _debugLazy(factory) {
+    if (!this._shouldEmitDebug()) return;
+    this.emit('debug', factory());
+  }
+
   shutdown() {
-    this.emit('debug', `[WS] shutdown requested`);
+    this._debug('[WS] shutdown requested');
     this.dead = true;
     this.reset();
   }
@@ -51,7 +66,7 @@ class VoiceWebSocket extends EventEmitter {
    * Resets the current WebSocket.
    */
   reset() {
-    this.emit('debug', `[WS] reset requested`);
+    this._debug('[WS] reset requested');
     if (this.ws) {
       if (this.ws.readyState !== WebSocket.CLOSED) this.ws.close();
       this.ws = null;
@@ -63,11 +78,11 @@ class VoiceWebSocket extends EventEmitter {
    * Starts connecting to the Voice WebSocket Server.
    */
   connect() {
-    this.emit('debug', `[WS] connect requested`);
+    this._debug('[WS] connect requested');
     if (this.dead) return;
     if (this.ws) this.reset();
     if (this.attempts >= 5) {
-      this.emit('debug', new Error('VOICE_CONNECTION_ATTEMPTS_EXCEEDED', this.attempts));
+      this._debug(new Error('VOICE_CONNECTION_ATTEMPTS_EXCEEDED', this.attempts));
       return;
     }
 
@@ -77,8 +92,8 @@ class VoiceWebSocket extends EventEmitter {
      * The actual WebSocket used to connect to the Voice WebSocket Server.
      * @type {WebSocket}
      */
-    this.ws = WebSocket.create(`wss://${this.connection.authentication.endpoint}/`, { v: 8 });
-    this.emit('debug', `[WS] connecting, ${this.attempts} attempts, ${this.ws.url}`);
+    this.ws = WebSocket.create(`wss://${this.connection.authentication.endpoint}/`, { v: 9 });
+    this._debug(`[WS] connecting, ${this.attempts} attempts, ${this.ws.url}`);
     this.ws.onopen = this.onOpen.bind(this);
     this.ws.onmessage = this.onMessage.bind(this);
     this.ws.onclose = this.onClose.bind(this);
@@ -91,7 +106,7 @@ class VoiceWebSocket extends EventEmitter {
    * @returns {Promise<string>}
    */
   send(data) {
-    this.emit('debug', `[WS] >> ${data}`);
+    this._debug(`[WS] >> ${data}`);
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('WS_NOT_OPEN', data);
       this.ws.send(data, null, error => {
@@ -111,13 +126,9 @@ class VoiceWebSocket extends EventEmitter {
     return this.send(packet);
   }
 
-  /**
-   * Called whenever the WebSocket opens.
-   */
-  onOpen() {
-    this.emit('debug', `[WS] opened at gateway ${this.connection.authentication.endpoint}`);
-    this.sendPacket({
-      op: Opcodes.DISPATCH,
+  sendIdentify() {
+    return this.sendPacket({
+      op: VoiceOpcodes.IDENTIFY,
       d: {
         server_id: this.connection.serverId || this.connection.channel.guild?.id || this.connection.channel.id,
         user_id: this.client.user.id,
@@ -126,8 +137,44 @@ class VoiceWebSocket extends EventEmitter {
         streams: [{ type: 'screen', rid: '100', quality: 100 }],
         video: true,
       },
-    }).catch(() => {
-      this.emit('error', new Error('VOICE_JOIN_SOCKET_CLOSED'));
+    });
+  }
+
+  sendResume() {
+    return this.sendPacket({
+      op: VoiceOpcodes.RESUME,
+      d: {
+        server_id: this.connection.serverId || this.connection.channel.guild?.id || this.connection.channel.id,
+        session_id: this.connection.authentication.sessionId,
+        token: this.connection.authentication.token,
+        seq_ack: this._sequenceNumber,
+        channel_id: this.connection.channel.id,
+      },
+    });
+  }
+
+  /**
+   * Called whenever the WebSocket opens.
+   */
+  onOpen() {
+    this._debug(`[WS] opened at gateway ${this.connection.authentication.endpoint}`);
+
+    const shouldResume =
+      this.connection.status === VoiceStatus.RECONNECTING &&
+      this._sequenceNumber >= 0 &&
+      Boolean(this.connection.authentication.sessionId && this.connection.authentication.token);
+
+    const connectPromise = shouldResume ? this.sendResume() : this.sendIdentify();
+    this._resumeAttempted = shouldResume;
+    connectPromise.catch(() => {
+      if (shouldResume) {
+        this._resumeAttempted = false;
+        this.connection._voiceSequence = -1;
+        this._sequenceNumber = -1;
+        this.sendIdentify().catch(() => this.emit('error', new Error('VOICE_JOIN_SOCKET_CLOSED')));
+      } else {
+        this.emit('error', new Error('VOICE_JOIN_SOCKET_CLOSED'));
+      }
     });
   }
 
@@ -149,7 +196,12 @@ class VoiceWebSocket extends EventEmitter {
    * @param {CloseEvent} event The WebSocket close event
    */
   onClose(event) {
-    this.emit('debug', `[WS] closed with code ${event.code} and reason: ${event.reason}`);
+    this._debug(`[WS] closed with code ${event.code} and reason: ${event.reason}`);
+    if (this._resumeAttempted) {
+      this.connection._voiceSequence = -1;
+      this._sequenceNumber = -1;
+      this._resumeAttempted = false;
+    }
     if (!this.dead) setTimeout(this.connect.bind(this), this.attempts * 1000).unref();
   }
 
@@ -158,7 +210,7 @@ class VoiceWebSocket extends EventEmitter {
    * @param {Error} error The error that occurred
    */
   onError(error) {
-    this.emit('debug', `[WS] Error: ${error}`);
+    this._debug(`[WS] Error: ${error}`);
     this.emit('error', error);
   }
 
@@ -167,13 +219,18 @@ class VoiceWebSocket extends EventEmitter {
    * @param {Object} packet The received packet
    */
   onPacket(packet) {
-    this.emit('debug', `[WS] << ${JSON.stringify(packet)}`);
-    if (packet.seq) this._sequenceNumber = packet.seq;
+    this._debugLazy(() => `[WS] << ${JSON.stringify(packet)}`);
+    if (packet.seq != null) {
+      this._sequenceNumber = packet.seq;
+      this.connection._voiceSequence = packet.seq;
+    }
     switch (packet.op) {
       case VoiceOpcodes.HELLO:
         this.setHeartbeat(packet.d.heartbeat_interval);
         break;
       case VoiceOpcodes.READY:
+        this.attempts = 0;
+        this._resumeAttempted = false;
         /**
          * Emitted once the voice WebSocket receives the ready packet.
          * @param {Object} packet The received packet
@@ -181,6 +238,11 @@ class VoiceWebSocket extends EventEmitter {
          */
         this.emit('ready', packet.d);
         this.connection.setVideoStatus(false);
+        break;
+      case VoiceOpcodes.RESUMED:
+        this.attempts = 0;
+        this._resumeAttempted = false;
+        this.emit('resumed', packet.d);
         break;
       /* eslint-disable no-case-declarations */
       case VoiceOpcodes.SESSION_DESCRIPTION:

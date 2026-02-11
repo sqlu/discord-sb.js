@@ -14,20 +14,17 @@ class MessageDeleteBulkAction extends Action {
       if (!channel.isText()) return {};
 
       const ids = data.ids;
+      const { cache } = channel.messages;
+      const channelId = channel.id;
+      const guildId = data.guild_id;
       const messages = new Collection();
       for (const id of ids) {
-        const message = this.getMessage(
-          {
-            id,
-            guild_id: data.guild_id,
-          },
-          channel,
-          false,
-        );
+        const message =
+          cache.get(id) ?? this.getMessage({ id, channel_id: channelId, guild_id: guildId }, channel, false);
         if (message) {
           deletedMessages.add(message);
           messages.set(message.id, message);
-          channel.messages.cache.delete(id);
+          cache.delete(id);
         }
       }
 

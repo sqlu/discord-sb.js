@@ -11,7 +11,7 @@ class InviteDeleteAction extends Action {
     const guild = client.guilds.cache.get(data.guild_id);
     if (!channel) return false;
 
-    const inviteData = Object.assign(data, { channel, guild });
+    const inviteData = Object.assign({}, data, { channel, guild });
     const invite = new Invite(client, inviteData);
     guild.invites.cache.delete(invite.code);
 

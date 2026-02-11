@@ -85,7 +85,7 @@ const Intents = require('./Intents');
  * @property {number} [restRequestTimeout=15000] Time to wait before cancelling a REST request, in milliseconds
  * @property {number} [restSweepInterval=60] How frequently to delete inactive request buckets, in seconds
  * (or 0 for never)
- * @property {number} [restGlobalRateLimit=0] How many requests to allow sending per second (0 for unlimited, 50 for
+ * @property {number} [restGlobalRateLimit=50] How many requests to allow sending per second (0 for unlimited, 50 for
  * the standard global limit used by Discord)
  * @property {string[]|RateLimitQueueFilter} [rejectOnRateLimit] Decides how rate limits and pre-emptive throttles
  * should be handled. If this option is an array containing the prefix of the request route (e.g. /channels to match any
@@ -182,7 +182,7 @@ class Options extends null {
       partials: ['USER', 'CHANNEL', 'GUILD_MEMBER', 'MESSAGE', 'REACTION', 'GUILD_SCHEDULED_EVENT'], // Enable the partials
       restWsBridgeTimeout: 5_000,
       restRequestTimeout: 15_000,
-      restGlobalRateLimit: 0,
+      restGlobalRateLimit: 50,
       retryLimit: 1,
       restTimeOffset: 500,
       restSweepInterval: 60,

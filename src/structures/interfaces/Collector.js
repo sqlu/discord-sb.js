@@ -4,6 +4,7 @@ const EventEmitter = require('node:events');
 const { setTimeout } = require('node:timers');
 const { Collection } = require('@discordjs/collection');
 const { TypeError } = require('../../errors');
+const FastQueue = require('../../util/FastQueue');
 const Util = require('../../util/Util');
 
 /**
@@ -236,7 +237,7 @@ class Collector extends EventEmitter {
    * @see {@link https://developer.mozilla.org/docs/Web/JavaScript/Reference/Statements/for-await...of}
    */
   async *[Symbol.asyncIterator]() {
-    const queue = [];
+    const queue = new FastQueue();
     const onCollect = item => queue.push(item);
     this.on('collect', onCollect);
 

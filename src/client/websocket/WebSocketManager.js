@@ -5,12 +5,14 @@ const { setImmediate } = require('node:timers');
 const { setTimeout: sleep } = require('node:timers/promises');
 const { Collection } = require('@discordjs/collection');
 const { RPCErrorCodes } = require('discord-api-types/v10');
+const DispatchTable = require('./DispatchTable');
 const WebSocketShard = require('./WebSocketShard');
-const PacketHandlers = require('./handlers');
 const { Error } = require('../../errors');
 const { Events, ShardEvents, Status, WSCodes, WSEvents } = require('../../util/Constants');
+const FastQueue = require('../../util/FastQueue');
+const { hasListener } = require('../../util/ListenerUtil');
 
-const BeforeReadyWhitelist = [
+const BeforeReadyWhitelist = new Set([
   WSEvents.READY,
   WSEvents.RESUMED,
   WSEvents.GUILD_CREATE,
@@ -18,14 +20,14 @@ const BeforeReadyWhitelist = [
   WSEvents.GUILD_MEMBERS_CHUNK,
   WSEvents.GUILD_MEMBER_ADD,
   WSEvents.GUILD_MEMBER_REMOVE,
-];
+]);
 
-const UNRECOVERABLE_CLOSE_CODES = Object.keys(WSCodes).slice(2).map(Number);
-const UNRESUMABLE_CLOSE_CODES = [
+const UNRECOVERABLE_CLOSE_CODES = new Set(Object.keys(WSCodes).slice(2).map(Number));
+const UNRESUMABLE_CLOSE_CODES = new Set([
   RPCErrorCodes.UnknownError,
   RPCErrorCodes.InvalidPermissions,
   RPCErrorCodes.InvalidClientId,
-];
+]);
 
 /**
  * The WebSocket manager for this client.
@@ -78,7 +80,7 @@ class WebSocketManager extends EventEmitter {
      * @private
      * @name WebSocketManager#packetQueue
      */
-    Object.defineProperty(this, 'packetQueue', { value: [] });
+    Object.defineProperty(this, 'packetQueue', { value: new FastQueue() });
     this._processingQueue = false;
 
     /**
@@ -122,6 +124,7 @@ class WebSocketManager extends EventEmitter {
    * @private
    */
   debug(message, shard) {
+    if (!hasListener(this.client, Events.DEBUG)) return;
     this.client.emit(Events.DEBUG, `[WS => ${shard ? `Shard ${shard.id}` : 'Manager'}] ${message}`);
   }
 
@@ -193,7 +196,7 @@ class WebSocketManager extends EventEmitter {
       });
 
       shard.on(ShardEvents.CLOSE, event => {
-        if (event.code === 1_000 ? this.destroyed : UNRECOVERABLE_CLOSE_CODES.includes(event.code)) {
+        if (event.code === 1_000 ? this.destroyed : UNRECOVERABLE_CLOSE_CODES.has(event.code)) {
           /**
            * Emitted when a shard's WebSocket disconnects and will no longer reconnect.
            * @event Client#shardDisconnect
@@ -205,7 +208,7 @@ class WebSocketManager extends EventEmitter {
           return;
         }
 
-        if (UNRESUMABLE_CLOSE_CODES.includes(event.code)) {
+        if (UNRESUMABLE_CLOSE_CODES.has(event.code)) {
           // These event codes cannot be resumed
           shard.sessionId = null;
         }
@@ -244,7 +247,7 @@ class WebSocketManager extends EventEmitter {
     try {
       await shard.connect();
     } catch (error) {
-      if (error?.code && UNRECOVERABLE_CLOSE_CODES.includes(error.code)) {
+      if (error?.code && UNRECOVERABLE_CLOSE_CODES.has(error.code)) {
         throw new Error(WSCodes[error.code]);
         // Undefined if session is invalid, error event for regular closes
       } else if (!error || error.code) {
@@ -283,7 +286,7 @@ class WebSocketManager extends EventEmitter {
         return this.reconnect();
       }
       // If we get an error at this point, it means we cannot reconnect anymore
-      if (this.client.listenerCount(Events.INVALIDATED)) {
+      if (hasListener(this.client, Events.INVALIDATED)) {
         /**
          * Emitted when the client's session becomes invalidated.
          * You are expected to handle closing the process gracefully and preventing a boot loop
@@ -324,9 +327,12 @@ class WebSocketManager extends EventEmitter {
   }
 
   _dispatchPacket(packet, shard) {
-    if (packet && PacketHandlers[packet.t]) {
-      PacketHandlers[packet.t](this.client, packet, shard);
-    } else if (packet) {
+    if (!packet) return;
+
+    const handler = DispatchTable[packet.t];
+    if (handler) {
+      handler(this.client, packet, shard);
+    } else {
       /**
        * Emitted whenever a packet isn't handled.
        * @event Client#unhandledPacket
@@ -342,7 +348,9 @@ class WebSocketManager extends EventEmitter {
     this._processingQueue = true;
     setImmediate(() => {
       while (this.packetQueue.length && this.status === Status.READY) {
-        const { packet, shard } = this.packetQueue.shift();
+        const queued = this.packetQueue.shift();
+        if (!queued) break;
+        const { packet, shard } = queued;
         this._dispatchPacket(packet, shard);
       }
       this._processingQueue = false;
@@ -360,7 +368,7 @@ class WebSocketManager extends EventEmitter {
    * @private
    */
   handlePacket(packet, shard) {
-    if (packet && this.status !== Status.READY && !BeforeReadyWhitelist.includes(packet.t)) {
+    if (packet && this.status !== Status.READY && !BeforeReadyWhitelist.has(packet.t)) {
       this.packetQueue.push({ packet, shard });
       return false;
     }

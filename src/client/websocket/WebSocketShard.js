@@ -1,10 +1,13 @@
 'use strict';
 
+const { Buffer } = require('node:buffer');
 const EventEmitter = require('node:events');
 const { setTimeout, setInterval, clearTimeout } = require('node:timers');
+const GatewaySendScheduler = require('./GatewaySendScheduler');
 const WebSocket = require('../../WebSocket');
 const { Status, Events, ShardEvents, Opcodes, WSEvents, WSCodes } = require('../../util/Constants');
 const Intents = require('../../util/Intents');
+const { hasListener } = require('../../util/ListenerUtil');
 const Util = require('../../util/Util');
 
 const STATUS_KEYS = Object.keys(Status);
@@ -50,6 +53,8 @@ class WebSocketShard extends EventEmitter {
      * @type {Status}
      */
     this.status = Status.IDLE;
+    this._hasGuildsIntent = new Intents(this.manager.client.options.intents).has(Intents.FLAGS.GUILDS);
+    this._wsPropsNormalized = false;
 
     /**
      * The current sequence of the shard
@@ -105,13 +110,46 @@ class WebSocketShard extends EventEmitter {
      * @type {Object}
      * @private
      */
+    const gatewaySchedulerOptions = this.manager.client.options.ws?.gatewayScheduler ?? {};
+    this._sendScheduler = new GatewaySendScheduler(this, {
+      capacity: gatewaySchedulerOptions.capacity ?? 110,
+      windowMs: gatewaySchedulerOptions.windowMs ?? 60e3,
+      importantBurst: gatewaySchedulerOptions.importantBurst ?? 8,
+    });
+
+    const scheduler = this._sendScheduler;
     Object.defineProperty(this, 'ratelimit', {
       value: {
-        queue: [],
-        total: 120,
-        remaining: 120,
-        time: 60e3,
-        timer: null,
+        queue: {
+          push: value => {
+            scheduler.normalQueue.push(value);
+            return scheduler.length;
+          },
+          unshift: value => {
+            scheduler.importantQueue.unshift(value);
+            return scheduler.length;
+          },
+          shift: () => scheduler._dequeue(),
+          clear: () => {
+            scheduler.normalQueue.clear();
+            scheduler.importantQueue.clear();
+            scheduler._importantStreak = 0;
+          },
+          get length() {
+            return scheduler.length;
+          },
+        },
+        total: scheduler.capacity,
+        get remaining() {
+          return scheduler.remaining;
+        },
+        set remaining(value) {
+          scheduler._tokens = Number.isFinite(value) ? Number(value) : scheduler.capacity;
+        },
+        time: scheduler.windowMs,
+        get timer() {
+          return scheduler.timer;
+        },
       },
     });
 
@@ -151,6 +189,22 @@ class WebSocketShard extends EventEmitter {
      * @private
      */
     Object.defineProperty(this, 'wsCloseTimeout', { value: null, writable: true });
+
+    /**
+     * The first-heartbeat timeout before the regular interval starts.
+     * @name WebSocketShard#heartbeatTimeout
+     * @type {?NodeJS.Timeout}
+     * @private
+     */
+    Object.defineProperty(this, 'heartbeatTimeout', { value: null, writable: true });
+
+    /**
+     * Delayed identify timer used after INVALID_SESSION.
+     * @name WebSocketShard#invalidSessionTimeout
+     * @type {?NodeJS.Timeout}
+     * @private
+     */
+    Object.defineProperty(this, 'invalidSessionTimeout', { value: null, writable: true });
 
     /**
      * If the manager attached its event handlers on the shard
@@ -258,6 +312,7 @@ class WebSocketShard extends EventEmitter {
       }
 
       const wsQuery = { v: client.options.ws.version };
+      const hasProxyAgent = Util.verifyProxyAgent(client.options.ws.agent);
 
       if (zlib) {
         this.inflate = new zlib.Inflate({
@@ -274,7 +329,7 @@ class WebSocketShard extends EventEmitter {
     Version    : ${client.options.ws.version}
     Encoding   : ${WebSocket.encoding}
     Compression: ${zlib ? 'zlib-stream' : 'none'}
-    Agent      : ${Util.verifyProxyAgent(client.options.ws.agent)}`,
+    Agent      : ${hasProxyAgent}`,
       );
 
       this.status = this.status === Status.DISCONNECTED ? Status.RECONNECTING : Status.CONNECTING;
@@ -285,7 +340,7 @@ class WebSocketShard extends EventEmitter {
       // Adding a handshake timeout to just make sure no zombie connection appears.
       const ws = (this.connection = WebSocket.create(gateway, wsQuery, {
         handshakeTimeout: 30_000,
-        agent: Util.verifyProxyAgent(client.options.ws.agent) ? client.options.ws.agent : undefined,
+        agent: hasProxyAgent ? client.options.ws.agent : undefined,
       }));
       ws.onopen = this.onOpen.bind(this);
       ws.onmessage = this.onMessage.bind(this);
@@ -329,8 +384,14 @@ class WebSocketShard extends EventEmitter {
       this.manager.client.emit(Events.SHARD_ERROR, err, this.id);
       return;
     }
-    this.manager.client.emit(Events.RAW, packet, this.id);
-    if (packet.op === Opcodes.DISPATCH) this.manager.emit(packet.t, packet.d, this.id);
+    const client = this.manager.client;
+    const hasRawListener = hasListener(client, Events.RAW);
+    if (hasRawListener) {
+      client.emit(Events.RAW, packet, this.id);
+    }
+    if (packet.op === Opcodes.DISPATCH && this.manager.listenerCount(packet.t) > 0) {
+      this.manager.emit(packet.t, packet.d, this.id);
+    }
     this.onPacket(packet);
   }
 
@@ -436,7 +497,10 @@ class WebSocketShard extends EventEmitter {
 
         this.resumeURL = packet.d.resume_gateway_url;
         this.sessionId = packet.d.session_id;
-        this.expectedGuilds = new Set(packet.d.guilds.filter(d => d?.unavailable == true).map(d => d.id));
+        this.expectedGuilds = new Set();
+        for (const guildData of packet.d.guilds) {
+          if (guildData?.unavailable == true) this.expectedGuilds.add(guildData.id);
+        }
         this.status = Status.WAITING_FOR_GUILDS;
         this.debug(`[READY] Session ${this.sessionId} | Resume url ${this.resumeURL}.`);
         this.lastHeartbeatAcked = true;
@@ -470,7 +534,7 @@ class WebSocketShard extends EventEmitter {
         this.debug('[RECONNECT] Discord asked us to reconnect');
         this.destroy({ closeCode: 4_000 });
         break;
-      case Opcodes.INVALID_SESSION:
+      case Opcodes.INVALID_SESSION: {
         this.debug(`[INVALID SESSION] Resumable: ${packet.d}.`);
         // If we can resume the session, do so immediately
         if (packet.d) {
@@ -483,13 +547,27 @@ class WebSocketShard extends EventEmitter {
         this.sessionId = null;
         // Set the status to reconnecting
         this.status = Status.RECONNECTING;
+        const retryDelay = Math.floor(Math.random() * 4_000) + 1_000;
+        this.debug(`[INVALID SESSION] Scheduling re-identify in ${retryDelay}ms.`);
         // Finally, emit the INVALID_SESSION event
         /**
          * Emitted when the session has been invalidated.
          * @event WebSocketShard#invalidSession
          */
         this.emit(ShardEvents.INVALID_SESSION);
+        if (this.invalidSessionTimeout) {
+          clearTimeout(this.invalidSessionTimeout);
+        }
+        this.invalidSessionTimeout = setTimeout(() => {
+          this.invalidSessionTimeout = null;
+          if (this.connection?.readyState === WebSocket.OPEN) {
+            this.identifyNew();
+          } else {
+            this.destroy({ reset: true, emit: false, log: false });
+          }
+        }, retryDelay).unref();
         break;
+      }
       case Opcodes.HEARTBEAT_ACK:
         this.ackHeartbeat();
         break;
@@ -531,7 +609,6 @@ class WebSocketShard extends EventEmitter {
       this.emit(ShardEvents.ALL_READY);
       return;
     }
-    const hasGuildsIntent = new Intents(this.manager.client.options.intents).has(Intents.FLAGS.GUILDS);
     // Step 2. Create a timeout that will mark the shard as ready if there are still unavailable guilds
     // * The timeout is 15 seconds by default
     // * This can be optionally changed in the client options via the `waitGuildTimeout` option
@@ -542,8 +619,8 @@ class WebSocketShard extends EventEmitter {
     this.readyTimeout = setTimeout(
       () => {
         this.debug(
-          `Shard ${hasGuildsIntent ? 'did' : 'will'} not receive any more guild packets` +
-            `${hasGuildsIntent ? ` in ${waitGuildTimeout} ms` : ''}.\nUnavailable guild count: ${
+          `Shard ${this._hasGuildsIntent ? 'did' : 'will'} not receive any more guild packets` +
+            `${this._hasGuildsIntent ? ` in ${waitGuildTimeout} ms` : ''}.\nUnavailable guild count: ${
               this.expectedGuilds.size
             }`,
         );
@@ -554,7 +631,7 @@ class WebSocketShard extends EventEmitter {
 
         this.emit(ShardEvents.ALL_READY, this.expectedGuilds);
       },
-      hasGuildsIntent ? waitGuildTimeout : 0,
+      this._hasGuildsIntent ? waitGuildTimeout : 0,
     ).unref();
   }
 
@@ -627,6 +704,11 @@ class WebSocketShard extends EventEmitter {
    */
   setHeartbeatTimer(time) {
     if (time === -1) {
+      if (this.heartbeatTimeout) {
+        this.debug('Clearing the first heartbeat timeout.');
+        clearTimeout(this.heartbeatTimeout);
+        this.heartbeatTimeout = null;
+      }
       if (this.heartbeatInterval) {
         this.debug('Clearing the heartbeat interval.');
         clearInterval(this.heartbeatInterval);
@@ -636,8 +718,15 @@ class WebSocketShard extends EventEmitter {
     }
     this.debug(`Setting a heartbeat interval for ${time}ms.`);
     // Sanity checks
+    if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
-    this.heartbeatInterval = setInterval(() => this.sendHeartbeat(), time).unref();
+    const jitter = Math.floor(Math.random() * time);
+    this.debug(`Scheduling first heartbeat in ${jitter}ms.`);
+    this.heartbeatTimeout = setTimeout(() => {
+      this.heartbeatTimeout = null;
+      this.sendHeartbeat('HeartbeatJitter', true);
+      this.heartbeatInterval = setInterval(() => this.sendHeartbeat(), time).unref();
+    }, jitter).unref();
   }
 
   /**
@@ -649,7 +738,9 @@ class WebSocketShard extends EventEmitter {
    */
   sendHeartbeat(
     tag = 'HeartbeatTimer',
-    ignoreHeartbeatAck = [Status.WAITING_FOR_GUILDS, Status.IDENTIFYING, Status.RESUMING].includes(this.status),
+    ignoreHeartbeatAck = this.status === Status.WAITING_FOR_GUILDS ||
+      this.status === Status.IDENTIFYING ||
+      this.status === Status.RESUMING,
   ) {
     if (ignoreHeartbeatAck && !this.lastHeartbeatAcked) {
       this.debug(`[${tag}] Didn't process heartbeat ack yet but we are still connected. Sending one now.`);
@@ -687,6 +778,10 @@ class WebSocketShard extends EventEmitter {
    * @returns {void}
    */
   identify() {
+    if (this.invalidSessionTimeout) {
+      clearTimeout(this.invalidSessionTimeout);
+      this.invalidSessionTimeout = null;
+    }
     return this.sessionId ? this.identifyResume() : this.identifyNew();
   }
 
@@ -703,14 +798,16 @@ class WebSocketShard extends EventEmitter {
 
     this.status = Status.IDENTIFYING;
 
-    // Patch something
-    Object.keys(client.options.ws.properties)
-      .filter(k => k.startsWith('$'))
-      .forEach(k => {
-        client.options.ws.properties[k.slice(1)] = client.options.ws.properties[k];
-        delete client.options.ws.properties[k];
-      });
-    if (typeof client.rest.invalidateSuperProperties === 'function') client.rest.invalidateSuperProperties();
+    if (!this._wsPropsNormalized) {
+      const wsProperties = client.options.ws.properties;
+      for (const key of Object.keys(wsProperties)) {
+        if (!key.startsWith('$')) continue;
+        wsProperties[key.slice(1)] = wsProperties[key];
+        delete wsProperties[key];
+      }
+      if (typeof client.rest.invalidateSuperProperties === 'function') client.rest.invalidateSuperProperties();
+      this._wsPropsNormalized = true;
+    }
 
     // Clone the identify payload and assign the token and shard info
     const d = {
@@ -758,8 +855,7 @@ class WebSocketShard extends EventEmitter {
    * @param {boolean} [important=false] If this packet should be added first in queue
    */
   send(data, important = false) {
-    this.ratelimit.queue[important ? 'unshift' : 'push'](data);
-    this.processQueue();
+    this._sendScheduler.enqueue(data, important);
   }
 
   /**
@@ -769,15 +865,43 @@ class WebSocketShard extends EventEmitter {
    * @private
    */
   _send(data) {
+    const client = this.manager.client;
+    const hasDebugListener = hasListener(client, Events.DEBUG);
+    const dataJSON = hasDebugListener ? JSON.stringify(data) : null;
     if (this.connection?.readyState !== WebSocket.OPEN) {
-      this.debug(`Tried to send packet '${JSON.stringify(data)}' but no WebSocket is available!`);
+      if (hasDebugListener) {
+        this.debug(`Tried to send packet '${dataJSON}' but no WebSocket is available!`);
+      }
       this.destroy({ closeCode: 4_000 });
       return;
     }
 
-    this.debug(`[WebSocketShard] send packet '${JSON.stringify(data)}'`);
-    this.connection.send(WebSocket.pack(data), err => {
-      if (err) this.manager.client.emit(Events.SHARD_ERROR, err, this.id);
+    let packed;
+    try {
+      packed = WebSocket.pack(data);
+    } catch (err) {
+      client.emit(Events.SHARD_ERROR, err, this.id);
+      return;
+    }
+
+    const byteSize = typeof packed === 'string' ? Buffer.byteLength(packed) : packed.byteLength ?? packed.length ?? 0;
+    if (byteSize > 15 * 1024) {
+      if (hasDebugListener) {
+        this.debug(`[WebSocketShard] refusing oversized payload (${byteSize} bytes)`);
+      }
+      client.emit(
+        Events.SHARD_ERROR,
+        new Error(`Gateway payload exceeds 15KiB (${byteSize} bytes).`), // eslint-disable-line no-restricted-syntax
+        this.id,
+      );
+      return;
+    }
+
+    if (hasDebugListener) {
+      this.debug(`[WebSocketShard] send packet '${dataJSON}'`);
+    }
+    this.connection.send(packed, err => {
+      if (err) client.emit(Events.SHARD_ERROR, err, this.id);
     });
   }
 
@@ -787,20 +911,7 @@ class WebSocketShard extends EventEmitter {
    * @private
    */
   processQueue() {
-    if (this.ratelimit.remaining === 0) return;
-    if (this.ratelimit.queue.length === 0) return;
-    if (this.ratelimit.remaining === this.ratelimit.total) {
-      this.ratelimit.timer = setTimeout(() => {
-        this.ratelimit.remaining = this.ratelimit.total;
-        this.processQueue();
-      }, this.ratelimit.time).unref();
-    }
-    while (this.ratelimit.remaining > 0) {
-      const item = this.ratelimit.queue.shift();
-      if (!item) return;
-      this._send(item);
-      this.ratelimit.remaining--;
-    }
+    this._sendScheduler.process();
   }
 
   /**
@@ -819,6 +930,10 @@ class WebSocketShard extends EventEmitter {
     // Step 0: Remove all timers
     this.setHeartbeatTimer(-1);
     this.setHelloTimeout(-1);
+    if (this.invalidSessionTimeout) {
+      clearTimeout(this.invalidSessionTimeout);
+      this.invalidSessionTimeout = null;
+    }
 
     this.debug(
       `[WebSocket] Destroy: Attempting to close the WebSocket. | WS State: ${
@@ -876,12 +991,7 @@ class WebSocketShard extends EventEmitter {
     }
 
     // Step 6: reset the rate limit data
-    this.ratelimit.remaining = this.ratelimit.total;
-    this.ratelimit.queue.length = 0;
-    if (this.ratelimit.timer) {
-      clearTimeout(this.ratelimit.timer);
-      this.ratelimit.timer = null;
-    }
+    this._sendScheduler.clear();
   }
 
   /**

@@ -6,6 +6,22 @@ const { Opcodes } = require('../../../util/Constants');
 let ClientUser;
 
 module.exports = (client, { d: data }, shard) => {
+  const buildSubscriptions = guilds => {
+    const subscriptions = {};
+    for (const guild of guilds) {
+      subscriptions[guild.id] = {
+        typing: true,
+        threads: true,
+        activities: true,
+        member_updates: true,
+        thread_member_lists: [],
+        members: [],
+        channels: {},
+      };
+    }
+    return subscriptions;
+  };
+
   // Check
   USER_REQUIRED_ACTION(client, { d: data });
 
@@ -70,68 +86,40 @@ module.exports = (client, { d: data }, shard) => {
       client.ws.broadcast({
         op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
         d: {
-          subscriptions: data1.reduce((accumulator, guild) => {
-            accumulator[guild.id] = {
-              typing: true,
-              threads: true,
-              activities: true,
-              member_updates: true,
-              thread_member_lists: [],
-              members: [],
-              channels: {},
-            };
-            return accumulator;
-          }, {}),
+          subscriptions: buildSubscriptions(data1),
         },
       });
       client.ws.broadcast({
         op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
         d: {
-          subscriptions: data2.reduce((accumulator, guild) => {
-            accumulator[guild.id] = {
-              typing: true,
-              threads: true,
-              activities: true,
-              member_updates: true,
-              thread_member_lists: [],
-              members: [],
-              channels: {},
-            };
-            return accumulator;
-          }, {}),
+          subscriptions: buildSubscriptions(data2),
         },
       });
     } else {
       client.ws.broadcast({
         op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
         d: {
-          subscriptions: data.guilds.reduce((accumulator, guild) => {
-            accumulator[guild.id] = {
-              typing: true,
-              threads: true,
-              activities: true,
-              member_updates: true,
-              thread_member_lists: [],
-              members: [],
-              channels: {},
-            };
-            return accumulator;
-          }, {}),
+          subscriptions: buildSubscriptions(data.guilds),
         },
       });
     }
   }
 
-  Promise.all(
-    data.private_channels.map(async (c, index) => {
-      if (client.options.DMChannelVoiceStatusSync < 1) return;
+  const dmChannels = Array.isArray(data.private_channels) ? data.private_channels : [];
+  const { DMChannelVoiceStatusSync } = client.options;
+
+  if (DMChannelVoiceStatusSync >= 1 && dmChannels.length) {
+    for (const c of dmChannels) {
       client.ws.broadcast({
         op: Opcodes.DM_UPDATE,
         d: {
           channel_id: c.id,
         },
       });
-      await client.sleep(client.options.DMChannelVoiceStatusSync * index);
-    }),
-  ).then(() => shard.checkReady());
+    }
+
+    client.sleep(DMChannelVoiceStatusSync * (dmChannels.length - 1)).then(() => shard.checkReady());
+  } else {
+    Promise.resolve().then(() => shard.checkReady());
+  }
 };

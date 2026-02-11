@@ -3,15 +3,19 @@
 const Action = require('./Action');
 const VoiceState = require('../../structures/VoiceState');
 const { Events } = require('../../util/Constants');
+const { hasListener } = require('../../util/ListenerUtil');
 
 class VoiceStateUpdate extends Action {
   handle(data) {
     const client = this.client;
+    const hasVoiceStateListener = hasListener(client, Events.VOICE_STATE_UPDATE);
     const guild = client.guilds.cache.get(data.guild_id);
     if (guild) {
       // Update the state
-      const oldState =
-        guild.voiceStates.cache.get(data.user_id)?._clone() ?? new VoiceState(guild, { user_id: data.user_id });
+      const previous = guild.voiceStates.cache.get(data.user_id);
+      const oldState = hasVoiceStateListener
+        ? previous?._clone() ?? new VoiceState(guild, { user_id: data.user_id })
+        : null;
 
       const newState = guild.voiceStates._add(data);
 
@@ -29,19 +33,28 @@ class VoiceStateUpdate extends Action {
        * @param {VoiceState} oldState The voice state before the update
        * @param {VoiceState} newState The voice state after the update
        */
-      client.emit(Events.VOICE_STATE_UPDATE, oldState, newState);
+      if (hasVoiceStateListener) {
+        client.emit(Events.VOICE_STATE_UPDATE, oldState, newState);
+      }
     } else {
       // Update the state
-      const oldState =
-        client.voiceStates.cache.get(data.user_id)?._clone() ?? new VoiceState({ client }, { user_id: data.user_id });
+      const previous = client.voiceStates.cache.get(data.user_id);
+      const oldState = hasVoiceStateListener
+        ? previous?._clone() ?? new VoiceState({ client }, { user_id: data.user_id })
+        : null;
 
       const newState = client.voiceStates._add(data);
 
-      client.emit(Events.VOICE_STATE_UPDATE, oldState, newState);
+      if (hasVoiceStateListener) {
+        client.emit(Events.VOICE_STATE_UPDATE, oldState, newState);
+      }
     }
     // Emit event
     if (data.user_id === client.user?.id) {
-      client.emit('debug', `[VOICE] received voice state update: ${JSON.stringify(data)}`);
+      const hasDebugListener = hasListener(client, Events.DEBUG);
+      if (hasDebugListener) {
+        client.emit(Events.DEBUG, `[VOICE] received voice state update: ${JSON.stringify(data)}`);
+      }
       client.voice.onVoiceStateUpdate(data);
     }
   }

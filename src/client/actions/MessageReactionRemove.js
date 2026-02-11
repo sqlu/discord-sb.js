@@ -3,14 +3,6 @@
 const Action = require('./Action');
 const { Events } = require('../../util/Constants');
 
-/*
-{ user_id: 'id',
-     message_id: 'id',
-     emoji: { name: '�', id: null },
-     channel_id: 'id',
-     guild_id: 'id' }
-*/
-
 class MessageReactionRemove extends Action {
   handle(data) {
     if (!data.emoji) return false;
@@ -18,12 +10,9 @@ class MessageReactionRemove extends Action {
     const user = this.getUser(data);
     if (!user) return false;
 
-    // Verify channel
-    const channel = this.getChannel({
-      id: data.channel_id,
-      user_id: data.user_id,
-      ...('guild_id' in data && { guild_id: data.guild_id }),
-    });
+    const channelData = { id: data.channel_id, user_id: data.user_id };
+    if ('guild_id' in data) channelData.guild_id = data.guild_id;
+    const channel = this.getChannel(channelData);
     if (!channel || !channel.isText()) return false;
 
     // Verify message

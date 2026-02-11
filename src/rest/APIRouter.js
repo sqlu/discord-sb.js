@@ -11,7 +11,7 @@ const reflectors = new Set([
   Symbol.for('nodejs.util.inspect.custom'),
 ]);
 const idRouteRegex = /\d{16,19}/;
-const majorIdRoutes = new Set(['channels', 'guilds']);
+const majorIdRoutes = new Set(['channels', 'guilds', 'webhooks']);
 const kState = Symbol('api_route_state');
 
 function buildRoute(manager) {

@@ -22,10 +22,11 @@ class ThreadListSyncAction extends Action {
       }
     }
 
-    const syncedThreads = data.threads.reduce((coll, rawThread) => {
+    const syncedThreads = new Collection();
+    for (const rawThread of data.threads) {
       const thread = client.channels._add(rawThread);
-      return coll.set(thread.id, thread);
-    }, new Collection());
+      syncedThreads.set(thread.id, thread);
+    }
 
     for (const rawMember of Object.values(data.members || {})) {
       // Discord sends the thread id as id in this object
@@ -48,11 +49,11 @@ class ThreadListSyncAction extends Action {
   }
 
   removeStale(channel) {
-    channel.threads?.cache.forEach(thread => {
+    for (const thread of channel.threads?.cache?.values() ?? []) {
       if (!thread.archived) {
         this.client.channels._remove(thread.id);
       }
-    });
+    }
   }
 }
 

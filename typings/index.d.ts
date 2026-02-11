@@ -563,7 +563,7 @@ export interface RESTRequestOptions {
 export type APIRouteSegment = string | number | bigint;
 
 export interface APIRouter {
-  (...segments: Array<APIRouteSegment | null | undefined>): APIRouter;
+  (...segments: (APIRouteSegment | null | undefined)[]): APIRouter;
   [key: string]: APIRouter;
   get: APIRouteMethod;
   post: APIRouteMethod;

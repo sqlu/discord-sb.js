@@ -3,9 +3,12 @@
 const Action = require('./Action');
 const { Events } = require('../../util/Constants');
 const { PartialTypes } = require('../../util/Constants');
+const { hasListener } = require('../../util/ListenerUtil');
 
 class PresenceUpdateAction extends Action {
   handle(data) {
+    const hasPresenceUpdateListener = hasListener(this.client, Events.PRESENCE_UPDATE);
+
     let user = this.client.users.cache.get(data.user.id);
     if (!user && data.user?.username) user = this.client.users._add(data.user);
     if (!user && ('username' in data.user || this.client.options.partials.includes(PartialTypes.USER))) {
@@ -31,11 +34,13 @@ class PresenceUpdateAction extends Action {
       }
     }
 
-    const oldPresence = (guild || this.client).presences.cache.get(user.id)?._clone() ?? null;
+    const oldPresence = hasPresenceUpdateListener
+      ? (guild || this.client).presences.cache.get(user.id)?._clone() ?? null
+      : null;
 
-    const newPresence = (guild || this.client).presences._add(Object.assign(data, { guild }));
+    const newPresence = (guild || this.client).presences._add(Object.assign({}, data, { guild }));
 
-    if (this.client.listenerCount(Events.PRESENCE_UPDATE) && !newPresence.equals(oldPresence)) {
+    if (hasPresenceUpdateListener && !newPresence.equals(oldPresence)) {
       /**
        * Emitted whenever a guild member's presence (e.g. status, activity) is changed.
        * @event Client#presenceUpdate

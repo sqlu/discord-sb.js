@@ -5,10 +5,12 @@ const { setInterval } = require('node:timers');
 const { Collection } = require('@discordjs/collection');
 const APIRequest = require('./APIRequest');
 const routeBuilder = require('./APIRouter');
+const RateLimitCoordinator = require('./RateLimitCoordinator');
 const RequestHandler = require('./RequestHandler');
 const { Error } = require('../errors');
 const { Endpoints } = require('../util/Constants');
 const FetchUtil = require('../util/FetchUtil');
+const Util = require('../util/Util');
 class RESTManager {
   constructor(client) {
     this.client = client;
@@ -27,18 +29,42 @@ class RESTManager {
     this._superProperties = null;
     this._superPropertiesUA = null;
     this._superPropertiesWsProps = null;
+    this._timezone = null;
+    this._proxyConfig = null;
+    this._proxySource = null;
     this._authToken = null;
     this._auth = null;
+    this._routeBuckets = new Collection();
+    this._bucketHandlers = new Collection();
+    this._formData = null;
+    this.coordinator = new RateLimitCoordinator(this);
 
     if (client.options.restSweepInterval > 0) {
       this.sweepInterval = setInterval(() => {
         this.handlers.sweep(handler => handler._inactive);
+        this._bucketHandlers.sweep(handler => handler._inactive);
+        this._routeBuckets.sweep(bucketHash => !this._bucketHandlers.has(bucketHash));
       }, client.options.restSweepInterval * 1_000).unref();
     }
   }
 
   get api() {
     return this._api;
+  }
+
+  _routeKey(method, route) {
+    return `${String(method).toUpperCase()}:${route}`;
+  }
+
+  bindBucket(method, route, bucketHash, handler) {
+    if (!bucketHash || !handler) return;
+    this._bucketHandlers.set(bucketHash, handler);
+    this._routeBuckets.set(this._routeKey(method, route), bucketHash);
+  }
+
+  getFormData() {
+    if (!this._formData) this._formData = FetchUtil.getNativeFormData();
+    return this._formData;
   }
 
   getAuth() {
@@ -70,6 +96,43 @@ class RESTManager {
     return this._superProperties;
   }
 
+  getTimezone() {
+    if (this._timezone !== null) return this._timezone;
+    try {
+      this._timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      this._timezone = undefined;
+    }
+    return this._timezone;
+  }
+
+  getProxyConfig() {
+    const source = this.client.options.http.agent;
+    if (source === this._proxySource) return this._proxyConfig;
+
+    this._proxySource = source;
+
+    const proxyConfig = Util.checkUndiciProxyAgent(source);
+    if (!proxyConfig) {
+      this._proxyConfig = null;
+      return this._proxyConfig;
+    }
+    if (typeof proxyConfig === 'string') {
+      this._proxyConfig = proxyConfig;
+      return this._proxyConfig;
+    }
+    if (proxyConfig?.uri) {
+      if (proxyConfig.headers) {
+        this._proxyConfig = { url: proxyConfig.uri, headers: proxyConfig.headers };
+      } else {
+        this._proxyConfig = proxyConfig.uri;
+      }
+      return this._proxyConfig;
+    }
+    this._proxyConfig = null;
+    return this._proxyConfig;
+  }
+
   get cdn() {
     const root = this.client.options.http.cdn;
     if (!this._cdn || this._cdnRoot !== root) {
@@ -81,12 +144,16 @@ class RESTManager {
 
   request(method, url, options = {}) {
     const apiRequest = new APIRequest(this, method, url, options);
-    let handler = this.handlers.get(apiRequest.route);
+    const routeKey = this._routeKey(apiRequest.method, apiRequest.route);
+    const bucketHash = this._routeBuckets.get(routeKey);
+    let handler = bucketHash ? this._bucketHandlers.get(bucketHash) : null;
+    if (!handler) handler = this.handlers.get(apiRequest.route);
 
     if (!handler) {
       handler = new RequestHandler(this);
-      this.handlers.set(apiRequest.route, handler);
     }
+    this.handlers.set(apiRequest.route, handler);
+    if (bucketHash) this._bucketHandlers.set(bucketHash, handler);
 
     return handler.push(apiRequest);
   }

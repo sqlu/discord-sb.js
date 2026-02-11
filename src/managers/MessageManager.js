@@ -334,48 +334,49 @@ class MessageManager extends CachedManager {
         });
     }
     if (limit && limit > 25) throw new RangeError('MESSAGE_SEARCH_LIMIT');
-    let stringQuery = [];
+    const queryData = {};
     const result = new Collection();
     let data;
-    if (authors.length > 0) stringQuery.push(authors.map(id => `author_id=${id}`).join('&'));
-    if (content && content.length) stringQuery.push(`content=${encodeURIComponent(content)}`);
-    if (mentions.length > 0) stringQuery.push(mentions.map(id => `mentions=${id}`).join('&'));
+    if (authors.length > 0) queryData.author_id = authors;
+    if (content && content.length) queryData.content = content;
+    if (mentions.length > 0) queryData.mentions = mentions;
     has = has.filter(v => ['link', 'embed', 'file', 'video', 'image', 'sound', 'sticker'].includes(v));
-    if (has.length > 0) stringQuery.push(has.map(v => `has=${v}`).join('&'));
-    if (maxId) stringQuery.push(`max_id=${maxId}`);
-    if (minId) stringQuery.push(`min_id=${minId}`);
-    if (nsfw) stringQuery.push('include_nsfw=true');
-    if (offset !== 0) stringQuery.push(`offset=${offset}`);
-    if (limit !== 25) stringQuery.push(`limit=${limit}`);
+    if (has.length > 0) queryData.has = has;
+    if (maxId) queryData.max_id = maxId;
+    if (minId) queryData.min_id = minId;
+    if (nsfw) queryData.include_nsfw = true;
+    if (offset !== 0) queryData.offset = offset;
+    if (limit !== 25) queryData.limit = limit;
     if (['timestamp', 'relevance'].includes(options.sortBy)) {
-      stringQuery.push(`sort_by=${options.sortBy}`);
+      queryData.sort_by = options.sortBy;
     } else {
-      stringQuery.push('sort_by=timestamp');
+      queryData.sort_by = 'timestamp';
     }
     if (['asc', 'desc'].includes(options.sortOrder)) {
-      stringQuery.push(`sort_order=${options.sortOrder}`);
+      queryData.sort_order = options.sortOrder;
     } else {
-      stringQuery.push('sort_order=desc');
+      queryData.sort_order = 'desc';
     }
     if (this.channel.guildId && channels.length > 0) {
-      stringQuery.push(channels.map(id => `channel_id=${id}`).join('&'));
+      queryData.channel_id = channels;
     }
-    if (typeof pinned == 'boolean') stringQuery.push(`pinned=${pinned}`);
+    if (typeof pinned == 'boolean') queryData.pinned = pinned;
     // Main
-    if (!stringQuery.length) {
+    if (!Object.keys(queryData).length) {
       return {
         messages: result,
         total: 0,
       };
     }
     if (this.channel.guildId) {
-      data = await this.client.api.guilds[this.channel.guildId].messages[`search?${stringQuery.join('&')}`].get();
+      data = await this.client.api.guilds[this.channel.guildId].messages.search.get({ query: queryData });
     } else {
-      stringQuery = stringQuery.filter(v => !v.startsWith('channel_id') && !v.startsWith('include_nsfw'));
-      data = await this.client.api.channels[this.channel.id].messages[`search?${stringQuery.join('&')}`].get();
+      delete queryData.channel_id;
+      delete queryData.include_nsfw;
+      data = await this.client.api.channels[this.channel.id].messages.search.get({ query: queryData });
     }
 
-    for await (const message of data.messages) result.set(message[0].id, new Message(this.client, message[0]));
+    for (const message of data.messages ?? []) result.set(message[0].id, new Message(this.client, message[0]));
     return {
       messages: result,
       total: data.total_results,
@@ -415,8 +416,11 @@ class MessageManager extends CachedManager {
     const voters = await this.client.channels(this.channel.id).polls(messageId).answers(answerId).get({
       query: { limit, after },
     });
-
-    return voters.users.reduce((acc, user) => acc.set(user.id, this.client.users._add(user, false)), new Collection());
+    const collection = new Collection();
+    for (const user of voters.users) {
+      collection.set(user.id, this.client.users._add(user, false));
+    }
+    return collection;
   }
 }
 

@@ -3,17 +3,16 @@
 const process = require('node:process');
 const Action = require('./Action');
 const { Events } = require('../../util/Constants');
+const { hasListener } = require('../../util/ListenerUtil');
 
 let deprecationEmitted = false;
 
 class MessageCreateAction extends Action {
   handle(data) {
     const client = this.client;
-    const channel = this.getChannel({
-      id: data.channel_id,
-      author: data.author,
-      ...('guild_id' in data && { guild_id: data.guild_id }),
-    });
+    const channelData = { id: data.channel_id, author: data.author };
+    if ('guild_id' in data) channelData.guild_id = data.guild_id;
+    const channel = this.getChannel(channelData);
     if (channel) {
       if (!channel.isText()) return {};
 
@@ -35,7 +34,8 @@ class MessageCreateAction extends Action {
        * @param {Message} message The created message
        * @deprecated Use {@link Client#event:messageCreate} instead
        */
-      if (client.emit('message', message) && !deprecationEmitted) {
+      const hasMessageListener = hasListener(client, 'message');
+      if (hasMessageListener && client.emit('message', message) && !deprecationEmitted) {
         deprecationEmitted = true;
         process.emitWarning('The message event is deprecated. Use messageCreate instead', 'DeprecationWarning');
       }

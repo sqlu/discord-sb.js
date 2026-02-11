@@ -4,12 +4,34 @@ const Buffer = require('node:buffer').Buffer;
 const { setTimeout } = require('node:timers');
 const { ciphers } = require('../util/Constants');
 const { getNativeFormData } = require('../util/FetchUtil');
-const Util = require('../util/Util');
 
 const cipherList = ciphers.join(':');
+const BASE_HEADERS = Object.freeze({
+  accept: '*/*',
+  'accept-language': 'en-US',
+  priority: 'u=1, i',
+  referer: 'https://discord.com/channels/@me',
+  'sec-ch-ua': '"Not:A-Brand";v="24", "Chromium";v="134"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Linux"',
+  'sec-fetch-dest': 'empty',
+  'sec-fetch-mode': 'cors',
+  'sec-fetch-site': 'same-origin',
+  'x-discord-locale': 'en-US',
+  origin: 'https://discord.com',
+  'x-debug-options': 'bugReporterEnabled',
+});
 
 const isReadableStream = value => value && typeof value.getReader === 'function';
 const isNodeReadable = value => value && typeof value.pipe === 'function';
+const cloneHeaders = source => Object.assign({}, source);
+const applyHeaderOverrides = (headers, overrides) => {
+  if (!overrides) return;
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete headers[key];
+    else headers[key] = value;
+  }
+};
 
 const streamToBuffer = async stream => {
   if (isReadableStream(stream)) {
@@ -44,6 +66,7 @@ class APIRequest {
     this.rest = rest;
     this.client = rest.client;
     this.method = method;
+    this.methodUpper = method.toUpperCase();
     this.route = options.route;
     this.options = options;
     this.retries = 0;
@@ -68,21 +91,12 @@ class APIRequest {
   }
 
   getProxyConfig() {
-    const proxyConfig = Util.checkUndiciProxyAgent(this.client.options.http.agent);
-    if (!proxyConfig) return null;
-    if (typeof proxyConfig === 'string') return proxyConfig;
-    if (proxyConfig?.uri) {
-      if (proxyConfig.headers) {
-        return { url: proxyConfig.uri, headers: proxyConfig.headers };
-      }
-      return proxyConfig.uri;
-    }
-    return null;
+    return this.rest.getProxyConfig();
   }
 
   async make(captchaKey, captchaRqToken) {
     const fetch = this.rest.fetch;
-    const FormData = getNativeFormData();
+    const FormData = typeof this.rest.getFormData === 'function' ? this.rest.getFormData() : getNativeFormData();
 
     const API =
       this.options.versioned === false
@@ -90,38 +104,21 @@ class APIRequest {
         : `${this.client.options.http.api}/v${this.client.options.http.version}`;
     const url = API + this.path;
 
-    let headers = {
-      accept: '*/*',
-      'accept-language': 'en-US',
-      priority: 'u=1, i',
-      referer: 'https://discord.com/channels/@me',
-      'sec-ch-ua': '"Not:A-Brand";v="24", "Chromium";v="134"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-dest': 'empty',
-      'sec-fetch-mode': 'cors',
-      'sec-fetch-site': 'same-origin',
-      'x-discord-locale': 'en-US',
-      'x-discord-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
-      'x-super-properties': this.superProperties,
-      origin: 'https://discord.com',
-      'x-debug-options': 'bugReporterEnabled',
-      ...this.client.options.http.headers,
-      'User-Agent': this.fullUserAgent,
-    };
+    const headers = this.options.webhook === true ? {} : cloneHeaders(BASE_HEADERS);
 
-    if (this.options.auth !== false) headers.Authorization = this.rest.getAuth();
-    if (this.options.reason) headers['X-Audit-Log-Reason'] = encodeURIComponent(this.options.reason);
-    if (this.options.headers) headers = Object.assign(headers, this.options.headers);
+    if (this.options.webhook !== true) {
+      headers['x-super-properties'] = this.superProperties;
+      const timezone = this.rest.getTimezone();
+      if (timezone !== undefined) headers['x-discord-timezone'] = timezone;
 
-    // Delete all headers if undefined
-    for (const [key, value] of Object.entries(headers)) {
-      if (value === undefined) delete headers[key];
-    }
-    if (this.options.webhook === true) {
-      headers = {
-        'User-Agent': this.client.options.http.headers['User-Agent'],
-      };
+      applyHeaderOverrides(headers, this.client.options.http.headers);
+      headers['User-Agent'] = this.fullUserAgent;
+
+      if (this.options.auth !== false) headers.Authorization = this.rest.getAuth();
+      if (this.options.reason) headers['X-Audit-Log-Reason'] = encodeURIComponent(this.options.reason);
+      applyHeaderOverrides(headers, this.options.headers);
+    } else {
+      headers['User-Agent'] = this.client.options.http.headers['User-Agent'];
     }
 
     // Some options
@@ -168,7 +165,7 @@ class APIRequest {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.client.options.restRequestTimeout).unref();
     const fetchOptions = {
-      method: this.method.toUpperCase(), // Undici doesn't normalize "patch" into "PATCH" (which surprisingly follows the spec).
+      method: this.methodUpper, // Undici doesn't normalize "patch" into "PATCH" (which surprisingly follows the spec).
       headers,
       body,
       signal: controller.signal,

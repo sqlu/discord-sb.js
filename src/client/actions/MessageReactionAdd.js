@@ -22,12 +22,9 @@ class MessageReactionAdd extends Action {
     const user = this.getUserFromMember(data);
     if (!user) return false;
 
-    // Verify channel
-    const channel = this.getChannel({
-      id: data.channel_id,
-      user_id: data.user_id,
-      ...('guild_id' in data && { guild_id: data.guild_id }),
-    });
+    const channelData = { id: data.channel_id, user_id: data.user_id };
+    if ('guild_id' in data) channelData.guild_id = data.guild_id;
+    const channel = this.getChannel(channelData);
     if (!channel || !channel.isText()) return false;
 
     // Verify message
@@ -37,12 +34,18 @@ class MessageReactionAdd extends Action {
     // Verify reaction
     const includePartial = this.client.options.partials.includes(PartialTypes.REACTION);
     if (message.partial && !includePartial) return false;
-    const reaction = message.reactions._add({
+    const reactionData = {
       emoji: data.emoji,
       count: message.partial ? null : 0,
       me: user.id === this.client.user.id,
-      ...data,
-    });
+    };
+    if ('count' in data) reactionData.count = data.count;
+    if ('me' in data) reactionData.me = data.me;
+    if ('me_burst' in data) reactionData.me_burst = data.me_burst;
+    if ('burst_colors' in data) reactionData.burst_colors = data.burst_colors;
+    if ('count_details' in data) reactionData.count_details = data.count_details;
+
+    const reaction = message.reactions._add(reactionData);
     if (!reaction) return false;
     reaction._add(user, data.burst);
     if (fromStructure) return { message, reaction, user };
