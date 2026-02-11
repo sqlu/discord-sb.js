@@ -484,6 +484,11 @@ class GuildMemberManager extends CachedManager {
    */
   fetchByMemberSafety(timeout = 15_000) {
     return new Promise(resolve => {
+      const sendSearchRecentMembers = payload => {
+        const shard = this.guild.shard;
+        if (shard) return shard.send(payload);
+        return this.client.ws.broadcast(payload);
+      };
       const nonce = SnowflakeUtil.generate();
       const fetchedMembers = new Collection();
       let timeout_ = setTimeout(() => {
@@ -496,12 +501,12 @@ class GuildMemberManager extends CachedManager {
             for (const member of members.values()) {
               fetchedMembers.set(member.id, member);
             }
-            this.client.ws.broadcast({
+            sendSearchRecentMembers({
               op: Opcodes.SEARCH_RECENT_MEMBERS,
               d: {
                 guild_id: this.guild.id,
                 query: '',
-                continuation_token: members.first()?.id,
+                continuation_token: members.firstKey(),
                 nonce,
               },
             });
@@ -513,7 +518,7 @@ class GuildMemberManager extends CachedManager {
         }
       };
       this.client.on(Events.GUILD_MEMBERS_CHUNK, handler);
-      this.client.ws.broadcast({
+      sendSearchRecentMembers({
         op: Opcodes.SEARCH_RECENT_MEMBERS,
         d: {
           guild_id: this.guild.id,

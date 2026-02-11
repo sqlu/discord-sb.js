@@ -39,21 +39,43 @@ exports.ciphers = [
  * The types of WebSocket error codes:
  * * 1000: WS_CLOSE_REQUESTED
  * * 1011: INTERNAL_ERROR
+ * * 4000: UNKNOWN_ERROR
+ * * 4001: UNKNOWN_OPCODE
+ * * 4002: DECODE_ERROR
+ * * 4003: NOT_AUTHENTICATED
  * * 4004: TOKEN_INVALID
+ * * 4005: ALREADY_AUTHENTICATED
+ * * 4007: INVALID_SEQ
+ * * 4008: RATE_LIMITED
+ * * 4009: SESSION_TIMED_OUT
  * * 4010: SHARDING_INVALID
  * * 4011: SHARDING_REQUIRED
+ * * 4012: INVALID_API_VERSION
  * * 4013: INVALID_INTENTS
  * * 4014: DISALLOWED_INTENTS
+ * * 4015: TOO_MANY_SESSIONS
+ * * 4016: CONNECTION_REQUEST_CANCELED
  * @typedef {Object<number, string>} WSCodes
  */
 exports.WSCodes = {
   1000: 'WS_CLOSE_REQUESTED',
   1011: 'INTERNAL_ERROR',
+  4000: 'UNKNOWN_ERROR',
+  4001: 'UNKNOWN_OPCODE',
+  4002: 'DECODE_ERROR',
+  4003: 'NOT_AUTHENTICATED',
   4004: 'TOKEN_INVALID',
+  4005: 'ALREADY_AUTHENTICATED',
+  4007: 'INVALID_SEQ',
+  4008: 'RATE_LIMITED',
+  4009: 'SESSION_TIMED_OUT',
   4010: 'SHARDING_INVALID',
   4011: 'SHARDING_REQUIRED',
+  4012: 'INVALID_API_VERSION',
   4013: 'INVALID_INTENTS',
   4014: 'DISALLOWED_INTENTS',
+  4015: 'TOO_MANY_SESSIONS',
+  4016: 'CONNECTION_REQUEST_CANCELED',
 };
 
 const AllowedImageFormats = ['webp', 'png', 'jpg', 'jpeg', 'gif'];
@@ -221,6 +243,12 @@ exports.VoiceStatus = {
  * * SEARCH_RECENT_MEMBERS: 35 => ~ Opcode 8 (Member Safety)
  * * REQUEST_CHANNEL_STATUSES: 36 => Request Voice Channel status.
  * * GUILD_SUBSCRIPTIONS_BULK: 37 => ~ Opcode 14
+ * * GUILD_CHANNELS_RESYNC: 38 => Request guild channel list resync.
+ * * REQUEST_CHANNEL_MEMBER_COUNT: 39 => Request member count for channels.
+ * * QOS_HEARTBEAT: 40 => Send heartbeat quality data.
+ * * UPDATE_TIME_SPENT_SESSION_ID: 41 => Update session id used for time-spent tracking.
+ * * LOBBY_VOICE_SERVER_PING: 42 => Ping lobby voice server.
+ * * REQUEST_CHANNEL_INFO: 43 => Request extended channel info.
  * @typedef {Object<string, number>} Opcodes
  */
 exports.Opcodes = {
@@ -261,11 +289,17 @@ exports.Opcodes = {
   SEARCH_RECENT_MEMBERS: 35, // Payload: { guild_id: string, query: string, continuation_token?: Snowflake }
   REQUEST_CHANNEL_STATUSES: 36, // Payload: { guild_id: string } | Response: CHANNEL_STATUSES | { guild_id, channels: { status, id }[] }
   GUILD_SUBSCRIPTIONS_BULK: 37, // Payload: { subscriptions: Object<guild_id, { Payload_op14 - guild_id }> } | Response: Opcode 14
-  // Updated: 23/1/2024
+  GUILD_CHANNELS_RESYNC: 38,
+  REQUEST_CHANNEL_MEMBER_COUNT: 39,
+  QOS_HEARTBEAT: 40,
+  UPDATE_TIME_SPENT_SESSION_ID: 41,
+  LOBBY_VOICE_SERVER_PING: 42,
+  REQUEST_CHANNEL_INFO: 43,
+  // Updated: 11/2/2026
 };
 
 /**
- * @typedef {Opject<string, number>} VoiceOpcodes
+ * @typedef {Object<string, number>} VoiceOpcodes
  */
 exports.VoiceOpcodes = {
   IDENTIFY: 0,
@@ -278,12 +312,17 @@ exports.VoiceOpcodes = {
   RESUME: 7,
   HELLO: 8,
   RESUMED: 9,
+  CLIENT_CONNECT: 11,
+  VIDEO: 12,
   SOURCES: 12,
   CLIENT_DISCONNECT: 13,
   SESSION_UPDATE: 14,
   MEDIA_SINK_WANTS: 15,
   VOICE_BACKEND_VERSION: 16,
   CHANNEL_OPTIONS_UPDATE: 17,
+  CLIENT_FLAGS: 18,
+  SPEED_TEST: 19,
+  CLIENT_PLATFORM: 20,
 };
 
 /**

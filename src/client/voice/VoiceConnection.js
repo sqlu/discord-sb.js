@@ -214,6 +214,12 @@ class VoiceConnection extends EventEmitter {
     this.emit('debug', factory());
   }
 
+  sendGatewayPacket(packet) {
+    const shard = this.channel?.shard ?? this.channel?.client?.ws?.shards?.first?.();
+    if (shard) return shard.send(packet);
+    return this.channel.client.ws.broadcast(packet);
+  }
+
   /**
    * Sets whether the voice connection should display as "speaking", "soundshare" or "none".
    * @param {BitFieldResolvable} value The new speaking state
@@ -258,7 +264,7 @@ class VoiceConnection extends EventEmitter {
     if (!value) {
       this.sockets.ws
         .sendPacket({
-          op: VoiceOpcodes.SOURCES,
+          op: VoiceOpcodes.VIDEO,
           d: {
             audio_ssrc: this.authentication.ssrc,
             video_ssrc: 0,
@@ -272,7 +278,7 @@ class VoiceConnection extends EventEmitter {
     } else {
       this.sockets.ws
         .sendPacket({
-          op: VoiceOpcodes.SOURCES,
+          op: VoiceOpcodes.VIDEO,
           d: {
             audio_ssrc: this.authentication.ssrc,
             video_ssrc: this.authentication.ssrc + 1,
@@ -331,7 +337,7 @@ class VoiceConnection extends EventEmitter {
 
     this._debugLazy(() => `Sending voice state update: ${JSON.stringify(options)}`);
 
-    return this.channel.client.ws.broadcast({
+    return this.sendGatewayPacket({
       op: Opcodes.VOICE_STATE_UPDATE,
       d: options,
     });
@@ -923,7 +929,7 @@ class StreamConnection extends VoiceConnection {
       preferred_region: null,
     };
     this._debugLazy(() => `Signal Stream: ${JSON.stringify(data)}`);
-    return this.channel.client.ws.broadcast({
+    return this.sendGatewayPacket({
       op: Opcodes.STREAM_CREATE,
       d: data,
     });
@@ -950,7 +956,7 @@ class StreamConnection extends VoiceConnection {
       },
     );
     this.isPaused = isPaused;
-    this.channel.client.ws.broadcast({
+    this.sendGatewayPacket({
       op: Opcodes.STREAM_SET_PAUSED,
       d: {
         stream_key: this.streamKey,
@@ -966,7 +972,7 @@ class StreamConnection extends VoiceConnection {
    */
   sendStopScreenshare() {
     this.#requestDisconnect = true;
-    this.channel.client.ws.broadcast({
+    this.sendGatewayPacket({
       op: Opcodes.STREAM_DELETE,
       d: {
         stream_key: this.streamKey,
@@ -1108,7 +1114,7 @@ class StreamConnectionReadonly extends VoiceConnection {
    */
   sendSignalScreenshare() {
     this._debug(`Signal Stream Watch: ${this.streamKey}`);
-    return this.channel.client.ws.broadcast({
+    return this.sendGatewayPacket({
       op: Opcodes.STREAM_WATCH,
       d: {
         stream_key: this.streamKey,
@@ -1123,7 +1129,7 @@ class StreamConnectionReadonly extends VoiceConnection {
    */
   sendStopScreenshare() {
     this.#requestDisconnect = true;
-    this.channel.client.ws.broadcast({
+    this.sendGatewayPacket({
       op: Opcodes.STREAM_DELETE,
       d: {
         stream_key: this.streamKey,

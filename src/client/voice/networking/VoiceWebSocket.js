@@ -131,6 +131,7 @@ class VoiceWebSocket extends EventEmitter {
       op: VoiceOpcodes.IDENTIFY,
       d: {
         server_id: this.connection.serverId || this.connection.channel.guild?.id || this.connection.channel.id,
+        channel_id: this.connection.channel.id,
         user_id: this.client.user.id,
         token: this.connection.authentication.token,
         session_id: this.connection.authentication.sessionId,
@@ -276,6 +277,7 @@ class VoiceWebSocket extends EventEmitter {
          */
         this.emit('startSpeaking', packet.d);
         break;
+      case VoiceOpcodes.VIDEO:
       case VoiceOpcodes.SOURCES:
         /**
          * Emitted whenever a streaming packet is received.
@@ -320,10 +322,7 @@ class VoiceWebSocket extends EventEmitter {
    * Clears a heartbeat interval, if one exists.
    */
   clearHeartbeat() {
-    if (!this.heartbeatInterval) {
-      this.emit('warn', 'Tried to clear a heartbeat interval that does not exist');
-      return;
-    }
+    if (!this.heartbeatInterval) return;
     clearInterval(this.heartbeatInterval);
     this.heartbeatInterval = null;
   }

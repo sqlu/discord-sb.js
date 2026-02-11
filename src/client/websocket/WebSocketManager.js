@@ -4,7 +4,6 @@ const EventEmitter = require('node:events');
 const { setImmediate } = require('node:timers');
 const { setTimeout: sleep } = require('node:timers/promises');
 const { Collection } = require('@discordjs/collection');
-const { RPCErrorCodes } = require('discord-api-types/v10');
 const DispatchTable = require('./DispatchTable');
 const WebSocketShard = require('./WebSocketShard');
 const { Error } = require('../../errors');
@@ -22,12 +21,9 @@ const BeforeReadyWhitelist = new Set([
   WSEvents.GUILD_MEMBER_REMOVE,
 ]);
 
-const UNRECOVERABLE_CLOSE_CODES = new Set(Object.keys(WSCodes).slice(2).map(Number));
-const UNRESUMABLE_CLOSE_CODES = new Set([
-  RPCErrorCodes.UnknownError,
-  RPCErrorCodes.InvalidPermissions,
-  RPCErrorCodes.InvalidClientId,
-]);
+const UNRECOVERABLE_CLOSE_CODES = new Set([4004, 4010, 4011, 4012, 4013, 4014, 4015, 4016]);
+const UNRESUMABLE_CLOSE_CODES = new Set([4007, 4009]);
+const getCloseCodeLabel = code => WSCodes[code] ?? `UNKNOWN_CLOSE_CODE_${code}`;
 
 /**
  * The WebSocket manager for this client.
@@ -204,7 +200,7 @@ class WebSocketManager extends EventEmitter {
            * @param {number} id The shard id that disconnected
            */
           this.client.emit(Events.SHARD_DISCONNECT, event, shard.id);
-          this.debug(WSCodes[event.code], shard);
+          this.debug(getCloseCodeLabel(event.code), shard);
           return;
         }
 
@@ -248,7 +244,7 @@ class WebSocketManager extends EventEmitter {
       await shard.connect();
     } catch (error) {
       if (error?.code && UNRECOVERABLE_CLOSE_CODES.has(error.code)) {
-        throw new Error(WSCodes[error.code]);
+        throw new Error(getCloseCodeLabel(error.code));
         // Undefined if session is invalid, error event for regular closes
       } else if (!error || error.code) {
         this.debug('Failed to connect to the gateway, requeueing...', shard);

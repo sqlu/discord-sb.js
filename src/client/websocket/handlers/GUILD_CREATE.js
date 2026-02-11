@@ -2,9 +2,9 @@
 
 const { Events, Opcodes, Status } = require('../../../util/Constants');
 
-const run = (client, guild) => {
+const sendSubscriptions = (shard, guildId) => {
   const subs = {};
-  subs[guild.id] = {
+  subs[guildId] = {
     typing: true,
     threads: true,
     activities: true,
@@ -13,7 +13,7 @@ const run = (client, guild) => {
     members: [],
     channels: {},
   };
-  client.ws.broadcast({
+  shard.send({
     op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
     d: {
       subscriptions: subs,
@@ -23,7 +23,7 @@ const run = (client, guild) => {
 
 module.exports = (client, { d: data }, shard) => {
   let guild = client.guilds.cache.get(data.id);
-  run(client, data);
+  sendSubscriptions(shard, data.id);
   if (guild) {
     if (!guild.available && !data.unavailable) {
       // A newly available guild
@@ -46,7 +46,6 @@ module.exports = (client, { d: data }, shard) => {
        * @param {Guild} guild The created guild
        */
       client.emit(Events.GUILD_CREATE, guild);
-      run(client, guild);
     }
   }
 };

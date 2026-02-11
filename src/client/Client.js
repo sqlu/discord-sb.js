@@ -786,10 +786,10 @@ class Client extends BaseClient {
         }
         const getForm = await this.api
           .guilds(i.guild?.id)
-          ['member-verification'].get({ query: { with_guild: false, invite_code: this.code } })
+          ['member-verification'].get({ query: { with_guild: false, invite_code: code } })
           .catch(() => {});
         if (getForm && getForm.form_fields[0]) {
-          const form = Object.assign(getForm.form_fields[0], { response: true });
+          const form = { ...getForm.form_fields[0], response: true };
           await this.api
             .guilds(i.guild?.id)
             .requests['@me'].put({ data: { form_fields: [form], version: getForm.version } });
@@ -798,7 +798,11 @@ class Client extends BaseClient {
       }
       return guild;
     } else {
-      return this.channels.cache.has(i.channelId || data.channel?.id);
+      const channelId = i.channelId || data.channel?.id;
+      if (!channelId) return null;
+      if (this.channels.cache.has(channelId)) return this.channels.cache.get(channelId);
+      if (data.channel) return this.channels._add(data.channel);
+      return null;
     }
   }
 
@@ -903,7 +907,10 @@ class Client extends BaseClient {
    * @returns {Promise<boolean>}
    */
   async unInstallUserApp(applicationId) {
-    await this.api.oauth2.tokens(applicationId).delete();
+    const authorizations = await this.api.oauth2.tokens.get();
+    const authorization = authorizations.find(token => token.application?.id === applicationId);
+    if (!authorization) return false;
+    await this.api.oauth2.tokens(authorization.id).delete();
     return true;
   }
 

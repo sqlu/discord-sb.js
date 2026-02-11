@@ -337,12 +337,15 @@ class GroupDMChannel extends Channel {
    * @returns {undefined}
    */
   sync() {
-    this.client.ws.broadcast({
+    const shard = this.shard;
+    const payload = {
       op: Opcodes.DM_UPDATE,
       d: {
         channel_id: this.id,
       },
-    });
+    };
+    if (shard) return shard.send(payload);
+    return this.client.ws.broadcast(payload);
   }
 
   /**

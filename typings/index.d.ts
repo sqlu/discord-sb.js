@@ -238,6 +238,7 @@ export class DiscordAuthWebsocket extends EventEmitter {
     discriminator: number;
     avatar: string;
   };
+  public readonly expire: Date;
   public readonly exprire: Date;
   public readonly AuthURL: string;
   public connect(client?: Client): Promise<void>;
@@ -4787,11 +4788,22 @@ export const Constants: {
   WSCodes: {
     1_000: 'WS_CLOSE_REQUESTED';
     1_011: 'INTERNAL_ERROR';
+    4_000: 'UNKNOWN_ERROR';
+    4_001: 'UNKNOWN_OPCODE';
+    4_002: 'DECODE_ERROR';
+    4_003: 'NOT_AUTHENTICATED';
     4_004: 'TOKEN_INVALID';
+    4_005: 'ALREADY_AUTHENTICATED';
+    4_007: 'INVALID_SEQ';
+    4_008: 'RATE_LIMITED';
+    4_009: 'SESSION_TIMED_OUT';
     4_010: 'SHARDING_INVALID';
     4_011: 'SHARDING_REQUIRED';
+    4_012: 'INVALID_API_VERSION';
     4_013: 'INVALID_INTENTS';
     4_014: 'DISALLOWED_INTENTS';
+    4_015: 'TOO_MANY_SESSIONS';
+    4_016: 'CONNECTION_REQUEST_CANCELED';
   };
   WSEvents: {
     [K in WSEventType]: K;
@@ -6804,12 +6816,17 @@ export interface ConstantsVoiceOpcodes {
   RESUME: 7;
   HELLO: 8;
   RESUMED: 9;
+  CLIENT_CONNECT: 11;
+  VIDEO: 12;
   SOURCES: 12;
   CLIENT_DISCONNECT: 13;
   SESSION_UPDATE: 14;
   MEDIA_SINK_WANTS: 15;
   VOICE_BACKEND_VERSION: 16;
   CHANNEL_OPTIONS_UPDATE: 17;
+  CLIENT_FLAGS: 18;
+  SPEED_TEST: 19;
+  CLIENT_PLATFORM: 20;
 }
 
 export interface ConstantsOpcodes {
@@ -6850,6 +6867,12 @@ export interface ConstantsOpcodes {
   SEARCH_RECENT_MEMBERS: 35;
   REQUEST_CHANNEL_STATUSES: 36;
   GUILD_SUBSCRIPTIONS_BULK: 37;
+  GUILD_CHANNELS_RESYNC: 38;
+  REQUEST_CHANNEL_MEMBER_COUNT: 39;
+  QOS_HEARTBEAT: 40;
+  UPDATE_TIME_SPENT_SESSION_ID: 41;
+  LOBBY_VOICE_SERVER_PING: 42;
+  REQUEST_CHANNEL_INFO: 43;
 }
 
 export interface ConstantsShardEvents {

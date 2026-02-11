@@ -1,25 +1,66 @@
 'use strict';
 
+const { Buffer } = require('node:buffer');
 const USER_REQUIRED_ACTION = require('./USER_REQUIRED_ACTION_UPDATE');
 const { Opcodes } = require('../../../util/Constants');
 
 let ClientUser;
+const MAX_SUBSCRIPTION_PACKET_BYTES = 14 * 1024;
+const SUBSCRIPTION_PAYLOAD_PREFIX = `{"op":${Opcodes.GUILD_SUBSCRIPTIONS_BULK},"d":{"subscriptions":{`;
+const SUBSCRIPTION_PAYLOAD_SUFFIX = '}}}';
+const SUBSCRIPTION_PAYLOAD_BASE_SIZE =
+  Buffer.byteLength(SUBSCRIPTION_PAYLOAD_PREFIX) + Buffer.byteLength(SUBSCRIPTION_PAYLOAD_SUFFIX);
+
+const createSubscription = () => ({
+  typing: true,
+  threads: true,
+  activities: true,
+  member_updates: true,
+  thread_member_lists: [],
+  members: [],
+  channels: {},
+});
+const SERIALIZED_SUBSCRIPTION = JSON.stringify(createSubscription());
+const SERIALIZED_SUBSCRIPTION_SIZE = Buffer.byteLength(SERIALIZED_SUBSCRIPTION);
+const getSubscriptionEntrySize = guildId =>
+  Buffer.byteLength(JSON.stringify(guildId)) + 1 + SERIALIZED_SUBSCRIPTION_SIZE;
 
 module.exports = (client, { d: data }, shard) => {
-  const buildSubscriptions = guilds => {
-    const subscriptions = {};
+  const buildSubscriptionChunks = guilds => {
+    const chunks = [];
+    let subscriptions = {};
+    let subscriptionCount = 0;
+    let payloadSize = SUBSCRIPTION_PAYLOAD_BASE_SIZE;
+
     for (const guild of guilds) {
-      subscriptions[guild.id] = {
-        typing: true,
-        threads: true,
-        activities: true,
-        member_updates: true,
-        thread_member_lists: [],
-        members: [],
-        channels: {},
-      };
+      const entrySize = getSubscriptionEntrySize(guild.id);
+      const separatorSize = subscriptionCount > 0 ? 1 : 0;
+
+      if (subscriptionCount > 0 && payloadSize + separatorSize + entrySize > MAX_SUBSCRIPTION_PACKET_BYTES) {
+        chunks.push(subscriptions);
+
+        subscriptions = {};
+        subscriptionCount = 0;
+        payloadSize = SUBSCRIPTION_PAYLOAD_BASE_SIZE;
+      }
+
+      subscriptions[guild.id] = createSubscription();
+      payloadSize += (subscriptionCount > 0 ? 1 : 0) + entrySize;
+      subscriptionCount++;
+
+      if (subscriptionCount === 1 && payloadSize > MAX_SUBSCRIPTION_PACKET_BYTES) {
+        chunks.push(subscriptions);
+        subscriptions = {};
+        subscriptionCount = 0;
+        payloadSize = SUBSCRIPTION_PAYLOAD_BASE_SIZE;
+      }
     }
-    return subscriptions;
+
+    if (subscriptionCount > 0) {
+      chunks.push(subscriptions);
+    }
+
+    return chunks;
   };
 
   // Check
@@ -79,27 +120,11 @@ module.exports = (client, { d: data }, shard) => {
   client.sessions.currentSessionIdHash = data.auth_session_id_hash;
 
   if (data.guilds.length) {
-    if (data.guilds.length > 80) {
-      // Split data bc 15kb
-      const data1 = data.guilds.slice(0, Math.floor(data.guilds.length / 2));
-      const data2 = data.guilds.slice(Math.floor(data.guilds.length / 2));
-      client.ws.broadcast({
+    for (const subscriptions of buildSubscriptionChunks(data.guilds)) {
+      shard.send({
         op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
         d: {
-          subscriptions: buildSubscriptions(data1),
-        },
-      });
-      client.ws.broadcast({
-        op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
-        d: {
-          subscriptions: buildSubscriptions(data2),
-        },
-      });
-    } else {
-      client.ws.broadcast({
-        op: Opcodes.GUILD_SUBSCRIPTIONS_BULK,
-        d: {
-          subscriptions: buildSubscriptions(data.guilds),
+          subscriptions,
         },
       });
     }
@@ -110,7 +135,7 @@ module.exports = (client, { d: data }, shard) => {
 
   if (DMChannelVoiceStatusSync >= 1 && dmChannels.length) {
     for (const c of dmChannels) {
-      client.ws.broadcast({
+      shard.send({
         op: Opcodes.DM_UPDATE,
         d: {
           channel_id: c.id,
