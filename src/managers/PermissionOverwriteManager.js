@@ -89,10 +89,15 @@ class PermissionOverwriteManager extends CachedManager {
   async upsert(userOrRole, options, overwriteOptions = {}, existing) {
     let userOrRoleId = this.channel.guild.roles.resolveId(userOrRole) ?? this.client.users.resolveId(userOrRole);
     let { type, reason } = overwriteOptions;
+
+    if (!userOrRoleId) throw new TypeError('INVALID_TYPE', 'parameter', 'User nor a Role');
+
     if (typeof type !== 'number') {
       userOrRole = this.channel.guild.roles.resolve(userOrRole) ?? this.client.users.resolve(userOrRole);
       if (!userOrRole) throw new TypeError('INVALID_TYPE', 'parameter', 'User nor a Role');
       type = userOrRole instanceof Role ? OverwriteTypes.role : OverwriteTypes.member;
+    } else if (type !== OverwriteTypes.role && type !== OverwriteTypes.member) {
+      throw new TypeError('INVALID_TYPE', 'overwriteOptions.type', 'OverwriteTypes.role or OverwriteTypes.member');
     }
 
     const { allow, deny } = PermissionOverwrites.resolveOverwriteOptions(options, existing);

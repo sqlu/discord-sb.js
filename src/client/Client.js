@@ -784,15 +784,13 @@ class Client extends BaseClient {
           this.emit(Events.DEBUG, `[Invite > Guild ${i.guild?.id}] Cannot bypass verify (Email required)`);
           return this.guilds.cache.get(i.guild?.id);
         }
-        const getForm = await this.api
-          .guilds(i.guild?.id)
-          ['member-verification'].get({ query: { with_guild: false, invite_code: code } })
+        const guildRoute = this.api.guilds[i.guild?.id];
+        const getForm = await guildRoute['member-verification']
+          .get({ query: { with_guild: false, invite_code: code } })
           .catch(() => {});
         if (getForm && getForm.form_fields[0]) {
           const form = { ...getForm.form_fields[0], response: true };
-          await this.api
-            .guilds(i.guild?.id)
-            .requests['@me'].put({ data: { form_fields: [form], version: getForm.version } });
+          await guildRoute.requests['@me'].put({ data: { form_fields: [form], version: getForm.version } });
           this.emit(Events.DEBUG, `[Invite > Guild ${i.guild?.id}] Bypassed verify`);
         }
       }

@@ -389,7 +389,7 @@ class WebSocketShard extends EventEmitter {
     if (hasRawListener) {
       client.emit(Events.RAW, packet, this.id);
     }
-    if (packet.op === Opcodes.DISPATCH && this.manager.listenerCount(packet.t) > 0) {
+    if (packet.op === Opcodes.DISPATCH && hasListener(this.manager, packet.t)) {
       this.manager.emit(packet.t, packet.d, this.id);
     }
     this.onPacket(packet);

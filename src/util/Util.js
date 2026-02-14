@@ -1,5 +1,6 @@
 'use strict';
 
+const { Buffer } = require('node:buffer');
 const { Agent } = require('node:http');
 const { parse } = require('node:path');
 const process = require('node:process');
@@ -10,6 +11,8 @@ const { getNativeFetch } = require('./FetchUtil');
 const { Error: DiscordError, RangeError, TypeError } = require('../errors');
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const isObject = d => typeof d === 'object' && d !== null;
+const isWebReadableStream = value => value && typeof value.getReader === 'function';
+const isNodeReadableStream = value => value && typeof value.pipe === 'function';
 
 const fetch = getNativeFetch();
 
@@ -74,6 +77,41 @@ const payloadTypes = [
     decode: false,
   },
 ];
+
+const readWebReadableStream = async readableStream => {
+  const reader = readableStream.getReader();
+  const chunks = [];
+  let done = false;
+  while (!done) {
+    // eslint-disable-next-line no-await-in-loop
+    const readResult = await reader.read();
+    done = readResult.done;
+    if (done) break;
+    const { value } = readResult;
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+};
+
+const readNodeReadableStream = async readableStream => {
+  const chunks = [];
+  for await (const chunk of readableStream) {
+    if (Buffer.isBuffer(chunk)) {
+      chunks.push(chunk);
+      continue;
+    }
+    if (chunk instanceof ArrayBuffer) {
+      chunks.push(Buffer.from(chunk));
+      continue;
+    }
+    if (ArrayBuffer.isView(chunk)) {
+      chunks.push(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+      continue;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+};
 
 /**
  * Contains various general-purpose utility methods.
@@ -853,38 +891,75 @@ class Util extends null {
     return Number(BigInt(userId) >> 22n) % 6;
   }
 
+  static _resolveKnownUploadSize(data) {
+    if (Buffer.isBuffer(data)) return data.byteLength;
+    if (typeof data === 'string') return Buffer.byteLength(data);
+    if (data instanceof ArrayBuffer) return data.byteLength;
+    if (ArrayBuffer.isView(data)) return data.byteLength;
+    if (typeof Blob !== 'undefined' && data instanceof Blob) return data.size;
+    if (typeof data?.size === 'number') return data.size;
+    if (typeof data?.byteLength === 'number') return data.byteLength;
+    return null;
+  }
+
+  static async _resolveUploadDataAndSize(data) {
+    const knownSize = Util._resolveKnownUploadSize(data);
+    if (knownSize !== null) return { data, size: knownSize };
+
+    if (typeof data?.arrayBuffer === 'function') {
+      const buffer = Buffer.from(await data.arrayBuffer());
+      return { data: buffer, size: buffer.byteLength };
+    }
+
+    if (isWebReadableStream(data)) {
+      const buffer = await readWebReadableStream(data);
+      return { data: buffer, size: buffer.byteLength };
+    }
+
+    if (isNodeReadableStream(data)) {
+      const buffer = await readNodeReadableStream(data);
+      return { data: buffer, size: buffer.byteLength };
+    }
+
+    throw new TypeError(
+      'INVALID_TYPE',
+      'file',
+      'Buffer, string, ArrayBuffer, TypedArray, Blob, File, BunFile, or readable stream',
+      true,
+    );
+  }
+
   static async getUploadURL(client, channelId, files) {
     if (!files.length) return [];
-    files = files.map((file, i) => ({
-      filename: file.name,
-      // 25MB = 26_214_400bytes
-      file_size: Math.floor((26_214_400 / 10) * Math.random()),
-      id: `${i}`,
-    }));
+
+    const payloadFiles = [];
+    for (const [index, file] of files.entries()) {
+      // eslint-disable-next-line no-await-in-loop
+      const resolved = await Util._resolveUploadDataAndSize(file.file);
+      file.file = resolved.data;
+      payloadFiles.push({
+        filename: file.name,
+        file_size: resolved.size,
+        id: `${index}`,
+      });
+    }
+
     const { attachments } = await client.api.channels[channelId].attachments.post({
       data: {
-        files,
+        files: payloadFiles,
       },
     });
     return attachments;
   }
 
-  static uploadFile(data, url) {
-    return new Promise((resolve, reject) => {
-      fetch(url, {
-        method: 'PUT',
-        body: data,
-        duplex: 'half', // Node.js v20
-      })
-        .then(res => {
-          if (res.ok) {
-            resolve(res);
-          } else {
-            reject(res);
-          }
-        })
-        .catch(reject);
+  static async uploadFile(data, url) {
+    const response = await fetch(url, {
+      method: 'PUT',
+      body: data,
+      duplex: 'half', // Node.js v20
     });
+    if (!response.ok) throw response;
+    return response;
   }
 
   /**

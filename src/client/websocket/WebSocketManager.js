@@ -35,6 +35,10 @@ class WebSocketManager extends EventEmitter {
   constructor(client) {
     super();
 
+    this._listenerCountsFast = Object.create(null);
+    this.on('newListener', this._onNewListener.bind(this));
+    this.on('removeListener', this._onRemoveListener.bind(this));
+
     /**
      * The client that instantiated this WebSocketManager
      * @type {Client}
@@ -111,6 +115,25 @@ class WebSocketManager extends EventEmitter {
       total += shard.ping;
     }
     return this.shards.size ? total / this.shards.size : 0;
+  }
+
+  _onNewListener(event) {
+    if (event === 'newListener' || event === 'removeListener') return;
+    this._listenerCountsFast[event] = (this._listenerCountsFast[event] ?? 0) + 1;
+  }
+
+  _onRemoveListener(event) {
+    if (event === 'newListener' || event === 'removeListener') return;
+    const current = this._listenerCountsFast[event] ?? 0;
+    if (current <= 1) {
+      delete this._listenerCountsFast[event];
+    } else {
+      this._listenerCountsFast[event] = current - 1;
+    }
+  }
+
+  hasListenerFast(event) {
+    return (this._listenerCountsFast[event] ?? 0) > 0;
   }
 
   /**

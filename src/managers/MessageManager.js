@@ -242,26 +242,30 @@ class MessageManager extends CachedManager {
     await this.client.api.channels(this.channel.id).messages(message).delete();
   }
 
-  _fetchId(messageId, cache, force) {
+  async _fetchId(messageId, cache, force) {
     if (!force) {
       const existing = this.cache.get(messageId);
       if (existing && !existing.partial) return existing;
     }
 
-    // https://discord.com/api/v9/channels/:id/messages?limit=50&around=:msgid
-    return new Promise((resolve, reject) => {
-      this._fetchMany(
-        {
-          around: messageId,
-          limit: 50,
-        },
-        cache,
-      )
-        .then(data_ =>
-          data_.has(messageId) ? resolve(data_.get(messageId)) : reject(new Error('MESSAGE_ID_NOT_FOUND')),
-        )
-        .catch(reject);
-    });
+    const firstBatch = await this._fetchMany(
+      {
+        around: messageId,
+        limit: 1,
+      },
+      cache,
+    );
+    if (firstBatch.has(messageId)) return firstBatch.get(messageId);
+
+    const fallbackBatch = await this._fetchMany(
+      {
+        around: messageId,
+        limit: 50,
+      },
+      cache,
+    );
+    if (fallbackBatch.has(messageId)) return fallbackBatch.get(messageId);
+    throw new Error('MESSAGE_ID_NOT_FOUND');
   }
 
   /**
@@ -306,7 +310,7 @@ class MessageManager extends CachedManager {
           maxId: null,
           minId: null,
           channels: [],
-          pinned: false,
+          pinned: undefined,
           nsfw: false,
           offset: 0,
           limit: 25,
@@ -316,14 +320,15 @@ class MessageManager extends CachedManager {
         options,
       );
     // Validate
-    if (authors.length > 0) authors = authors.map(u => this.client.users.resolveId(u));
-    if (mentions.length > 0) mentions = mentions.map(u => this.client.users.resolveId(u));
+    if (authors.length > 0) authors = authors.map(u => this.client.users.resolveId(u)).filter(Boolean);
+    if (mentions.length > 0) mentions = mentions.map(u => this.client.users.resolveId(u)).filter(Boolean);
     if (channels.length > 0) {
       channels = channels
         .map(c => this.client.channels.resolveId(c))
+        .filter(Boolean)
         .filter(id => {
           if (this.channel.guildId) {
-            const c = this.channel.guild.channels.cache.get(id);
+            const c = this.channel.guild?.channels?.cache.get(id);
             if (!c || !c.messages) return false;
             const perm = c.permissionsFor(this.client.user);
             if (!perm.has('READ_MESSAGE_HISTORY') || !perm.has('VIEW_CHANNEL')) return false;
@@ -337,9 +342,9 @@ class MessageManager extends CachedManager {
     const queryData = {};
     const result = new Collection();
     let data;
-    if (authors.length > 0) queryData.author_id = authors;
+    if (authors.length > 0) queryData.author_id = authors.length === 1 ? authors[0] : authors;
     if (content && content.length) queryData.content = content;
-    if (mentions.length > 0) queryData.mentions = mentions;
+    if (mentions.length > 0) queryData.mentions = mentions.length === 1 ? mentions[0] : mentions;
     has = has.filter(v => ['link', 'embed', 'file', 'video', 'image', 'sound', 'sticker'].includes(v));
     if (has.length > 0) queryData.has = has;
     if (maxId) queryData.max_id = maxId;
@@ -347,20 +352,20 @@ class MessageManager extends CachedManager {
     if (nsfw) queryData.include_nsfw = true;
     if (offset !== 0) queryData.offset = offset;
     if (limit !== 25) queryData.limit = limit;
-    if (['timestamp', 'relevance'].includes(options.sortBy)) {
-      queryData.sort_by = options.sortBy;
+    if (['timestamp', 'relevance'].includes(sortBy)) {
+      queryData.sort_by = sortBy;
     } else {
       queryData.sort_by = 'timestamp';
     }
-    if (['asc', 'desc'].includes(options.sortOrder)) {
-      queryData.sort_order = options.sortOrder;
+    if (['asc', 'desc'].includes(sortOrder)) {
+      queryData.sort_order = sortOrder;
     } else {
       queryData.sort_order = 'desc';
     }
-    if (this.channel.guildId && channels.length > 0) {
-      queryData.channel_id = channels;
+    if (this.channel.guildId) {
+      queryData.channel_id = channels.length > 0 ? channels : [this.channel.id];
     }
-    if (typeof pinned == 'boolean') queryData.pinned = pinned;
+    if (typeof pinned === 'boolean') queryData.pinned = pinned;
     // Main
     if (!Object.keys(queryData).length) {
       return {
@@ -376,7 +381,24 @@ class MessageManager extends CachedManager {
       data = await this.client.api.channels[this.channel.id].messages.search.get({ query: queryData });
     }
 
-    for (const message of data.messages ?? []) result.set(message[0].id, new Message(this.client, message[0]));
+    const deduped = new Set();
+    for (const rawBucket of data.messages ?? []) {
+      const bucket = Array.isArray(rawBucket) ? rawBucket : [rawBucket];
+      if (bucket.length === 0) continue;
+
+      let selected = bucket[0];
+      for (const candidate of bucket) {
+        if (candidate?.hit) {
+          selected = candidate;
+          break;
+        }
+      }
+
+      if (!selected?.id || deduped.has(selected.id)) continue;
+      deduped.add(selected.id);
+      result.set(selected.id, new Message(this.client, selected));
+    }
+
     return {
       messages: result,
       total: data.total_results,
@@ -409,15 +431,23 @@ class MessageManager extends CachedManager {
 
   /**
    * Fetches the users that voted for a poll answer.
+   * <info>The maximum limit allowed is 100.</info>
    * @param {FetchPollAnswerVotersOptions} options The options for fetching the poll answer voters
    * @returns {Promise<Collection<Snowflake, User>>}
    */
   async fetchPollAnswerVoters({ messageId, answerId, after, limit }) {
-    const voters = await this.client.channels(this.channel.id).polls(messageId).answers(answerId).get({
-      query: { limit, after },
+    const query = {};
+    if (typeof limit !== 'undefined') {
+      if (limit < 1 || limit > 100) throw new RangeError('POLL_ANSWER_VOTERS_LIMIT');
+      query.limit = limit;
+    }
+    if (after) query.after = after;
+
+    const voters = await this.client.api.channels(this.channel.id).polls(messageId).answers(answerId).get({
+      query,
     });
     const collection = new Collection();
-    for (const user of voters.users) {
+    for (const user of voters?.users ?? []) {
       collection.set(user.id, this.client.users._add(user, false));
     }
     return collection;

@@ -5348,19 +5348,19 @@ export class MessageManager extends CachedManager<Snowflake, Message, MessageRes
 }
 
 export interface MessageSearchOptions {
-  authors: UserResolvable[];
-  content: string;
-  mentions: UserResolvable[];
-  has: ('link' | 'embed' | 'file' | 'video' | 'image' | 'sound' | 'sticker')[];
-  maxId: Snowflake;
-  minId: Snowflake;
-  channels: TextChannelResolvable[];
-  pinned: boolean;
-  nsfw: boolean;
-  offset: number;
-  limit: number;
-  sortBy: 'relevant' | 'timestamp';
-  sortOrder: 'asc' | 'desc';
+  authors?: UserResolvable[];
+  content?: string;
+  mentions?: UserResolvable[];
+  has?: ('link' | 'embed' | 'file' | 'video' | 'image' | 'sound' | 'sticker')[];
+  maxId?: Snowflake;
+  minId?: Snowflake;
+  channels?: TextChannelResolvable[];
+  pinned?: boolean;
+  nsfw?: boolean;
+  offset?: number;
+  limit?: number;
+  sortBy?: 'relevance' | 'timestamp';
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface MessageSearchResult {
