@@ -297,7 +297,7 @@ class DiscordAuthWebsocket extends EventEmitter {
      * @typedef {Object} UserRaw
      * @property {Snowflake} id
      * @property {string} username
-     * @property {number} discriminator
+     * @property {number} discriminator Legacy discriminator. Use `username` instead.
      * @property {string} avatar
      */
 

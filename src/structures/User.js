@@ -9,6 +9,100 @@ const SnowflakeUtil = require('../util/SnowflakeUtil');
 const UserFlags = require('../util/UserFlags');
 const Util = require('../util/Util');
 
+const nousdeux = 24 * 60 * 60 * 1000;
+const ondoitfaireunebalade = 30 * nousdeux;
+const laluneestbelle = Object.freeze({
+  0: 'None',
+  1: 'Nitro Classic',
+  2: 'Nitro',
+  3: 'Nitro Basic',
+});
+const tumeplais = Object.freeze([
+  Object.freeze({ months: 1, badgeName: 'Bronze', assetId: 'premium_tenure_1_month' }),
+  Object.freeze({ months: 3, badgeName: 'Silver', assetId: 'premium_tenure_3_month' }),
+  Object.freeze({ months: 6, badgeName: 'Gold', assetId: 'premium_tenure_6_month' }),
+  Object.freeze({ months: 12, badgeName: 'Platinum', assetId: 'premium_tenure_12_month' }),
+  Object.freeze({ months: 24, badgeName: 'Diamond', assetId: 'premium_tenure_24_month' }),
+  Object.freeze({ months: 36, badgeName: 'Emerald', assetId: 'premium_tenure_36_month' }),
+  Object.freeze({ months: 60, badgeName: 'Ruby', assetId: 'premium_tenure_60_month' }),
+  Object.freeze({ months: 72, badgeName: 'Opal / Fire', assetId: 'premium_tenure_72_month' }),
+]);
+
+/**
+ * @typedef {'None'|'Nitro Classic'|'Nitro'|'Nitro Basic'} NitroTypeName
+ */
+
+/**
+ * @typedef {Object} PremiumBadge
+ * @property {'premium'} id Premium badge id from the profile endpoint
+ * @property {?string} asset Premium badge asset hash
+ * @property {?string} description Premium badge description from the profile endpoint
+ */
+
+/**
+ * @typedef {Object} NitroTenureMilestone
+ * @property {number} months Milestone month threshold
+ * @property {string} badgeName Human-readable badge tier name
+ * @property {string} assetId Asset reference id for the milestone
+ */
+
+/**
+ * @typedef {Object} NitroTenureInfo
+ * @property {?number} nitroType Raw premium type id
+ * @property {NitroTypeName} nitroName Nitro plan label
+ * @property {boolean} isEvolving Whether tenure progression is active
+ * @property {?number} currentTenureMonths Current elapsed tenure in 30-day months
+ * @property {?number} currentBadgeMilestone Current reached milestone in months
+ * @property {?NitroTenureMilestone} currentBadge Current reached milestone details
+ * @property {?number} nextBadgeMilestone Next milestone in months
+ * @property {?NitroTenureMilestone} nextBadge Next milestone details
+ * @property {?number} daysUntilNextBadge Days until next milestone
+ */
+
+function revienssteplait(user, now = Date.now()) {
+  const rawPremiumType = user.premiumType;
+  const premiumType = rawPremiumType ?? 0;
+  const nitroName = laluneestbelle[premiumType] ?? 'None';
+  const hasValidPremiumSince = Number.isFinite(user.premiumSinceTimestamp);
+  const isEvolving = premiumType === 2 && hasValidPremiumSince;
+
+  const base = {
+    nitroType: rawPremiumType ?? null,
+    nitroName,
+    isEvolving,
+    currentTenureMonths: null,
+    currentBadgeMilestone: null,
+    currentBadge: null,
+    nextBadgeMilestone: null,
+    nextBadge: null,
+    daysUntilNextBadge: null,
+  };
+
+  if (!isEvolving) return base;
+
+  const elapsedMs = now - user.premiumSinceTimestamp;
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return base;
+
+  const currentTenureMonths = Math.floor(elapsedMs / ondoitfaireunebalade);
+  const currentBadge = [...tumeplais].reverse().find(milestone => milestone.months <= currentTenureMonths) ?? null;
+  const nextBadge = tumeplais.find(milestone => milestone.months > currentTenureMonths) ?? null;
+
+  let daysUntilNextBadge = null;
+  if (nextBadge) {
+    const remainingMs = Math.max(0, nextBadge.months * ondoitfaireunebalade - elapsedMs);
+    daysUntilNextBadge = Math.ceil(remainingMs / nousdeux);
+  }
+
+  base.currentTenureMonths = currentTenureMonths;
+  base.currentBadgeMilestone = currentBadge?.months ?? null;
+  base.currentBadge = currentBadge;
+  base.nextBadgeMilestone = nextBadge?.months ?? null;
+  base.nextBadge = nextBadge;
+  base.daysUntilNextBadge = daysUntilNextBadge;
+
+  return base;
+}
+
 /**
  * Represents a user on Discord.
  * @implements {TextBasedChannel}
@@ -35,6 +129,8 @@ class User extends Base {
     this.premiumGuildSinceTimestamp = null;
 
     this.premiumType = null;
+
+    this.premiumBadge = null;
 
     this.legacyUsername = null;
 
@@ -89,6 +185,7 @@ class User extends Base {
        * The discriminator of this user
        * <info>`'0'`, or a 4-digit stringified number if they're using the legacy username system</info>
        * @type {?string}
+       * @deprecated The discriminator is no longer used by Discord. Use `username` or `displayName` instead.
        */
       this.discriminator = data.discriminator;
     } else {
@@ -188,6 +285,18 @@ class User extends Base {
       this.premiumType = data.premiumType ?? null;
     } else {
       this.premiumType ??= null;
+    }
+
+    if ('premium_badge' in data) {
+      /**
+       * Premium badge metadata from profile badges
+       * @type {?PremiumBadge}
+       */
+      this.premiumBadge = data.premium_badge ?? null;
+    } else if ('premiumBadge' in data) {
+      this.premiumBadge = data.premiumBadge ?? null;
+    } else {
+      this.premiumBadge ??= null;
     }
 
     if ('legacy_username' in data) {
@@ -467,6 +576,51 @@ class User extends Base {
   }
 
   /**
+   * Readable Nitro plan name from {@link User#premiumType}.
+   * @type {NitroTypeName}
+   * @readonly
+   */
+  get nitroName() {
+    return laluneestbelle[this.premiumType ?? 0] ?? 'None';
+  }
+
+  /**
+   * Current Nitro tenure in 30-day months. Returns null if tenure is not evolving.
+   * @type {?number}
+   * @readonly
+   */
+  get currentTenureMonths() {
+    return this.nitroTenure.currentTenureMonths;
+  }
+
+  /**
+   * The next Nitro tenure milestone in months. Returns null if max milestone reached or tenure not evolving.
+   * @type {?number}
+   * @readonly
+   */
+  get nextBadgeMilestone() {
+    return this.nitroTenure.nextBadgeMilestone;
+  }
+
+  /**
+   * Days remaining before the next Nitro tenure badge milestone.
+   * @type {?number}
+   * @readonly
+   */
+  get daysUntilNextBadge() {
+    return this.nitroTenure.daysUntilNextBadge;
+  }
+
+  /**
+   * Nitro tenure snapshot with current and next badge details.
+   * @type {NitroTenureInfo}
+   * @readonly
+   */
+  get nitroTenure() {
+    return revienssteplait(this);
+  }
+
+  /**
    * A link to the user's avatar.
    * @param {ImageURLOptions} [options={}] Options for the Image URL
    * @returns {?string}
@@ -556,6 +710,7 @@ class User extends Base {
    * if they're using the legacy username system</info>
    * @type {?string}
    * @readonly
+   * @deprecated Legacy discriminator tags are deprecated by Discord. Use `displayName` or `username` instead.
    */
   get tag() {
     return typeof this.username === 'string'
@@ -602,7 +757,7 @@ class User extends Base {
 
   /**
    * Checks if the user is equal to another.
-   * It compares id, username, discriminator, avatar, banner, accent color, and bot flags.
+   * It compares id, username, legacy discriminator, avatar, banner, accent color, and bot flags.
    * It is recommended to compare equality by using `user.id === user2.id` unless you want to compare all properties.
    * @param {User} user User to compare with
    * @returns {boolean}
@@ -623,6 +778,9 @@ class User extends Base {
       this.premiumSinceTimestamp === user.premiumSinceTimestamp &&
       this.premiumGuildSinceTimestamp === user.premiumGuildSinceTimestamp &&
       this.premiumType === user.premiumType &&
+      this.premiumBadge?.id === user.premiumBadge?.id &&
+      this.premiumBadge?.asset === user.premiumBadge?.asset &&
+      this.premiumBadge?.description === user.premiumBadge?.description &&
       this.legacyUsername === user.legacyUsername &&
       this.avatarDecorationData?.asset === user.avatarDecorationData?.asset &&
       this.avatarDecorationData?.skuId === user.avatarDecorationData?.skuId &&
@@ -640,6 +798,7 @@ class User extends Base {
 
   /**
    * Compares the user with an API user object
+   * Includes legacy discriminator comparison for compatibility with older payloads.
    * @param {APIUser} user The API user object to compare
    * @returns {boolean}
    * @private
@@ -731,6 +890,11 @@ class User extends Base {
     json.displayAvatarURL = this.displayAvatarURL();
     json.bannerURL = this.banner ? this.bannerURL() : this.banner;
     json.guildTagBadgeURL = this.guildTagBadgeURL();
+    json.nitroName = this.nitroName;
+    json.currentTenureMonths = this.currentTenureMonths;
+    json.nextBadgeMilestone = this.nextBadgeMilestone;
+    json.daysUntilNextBadge = this.daysUntilNextBadge;
+    json.nitroTenure = this.nitroTenure;
     return json;
   }
 
@@ -814,7 +978,7 @@ class User extends Base {
  * @example
  * // Send a direct message
  * user.send('Hello!')
- *   .then(message => console.log(`Sent message: ${message.content} to ${user.tag}`))
+ *   .then(message => console.log(`Sent message: ${message.content} to ${user.displayName}`))
  *   .catch(console.error);
  */
 

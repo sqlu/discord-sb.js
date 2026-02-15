@@ -235,6 +235,7 @@ export class DiscordAuthWebsocket extends EventEmitter {
   public readonly user: {
     id: Snowflake;
     username: string;
+    /** @deprecated The discriminator is no longer used by Discord. Use `username` or `displayName`. */
     discriminator: number;
     avatar: string;
   };
@@ -3914,6 +3915,32 @@ export interface UserPrimaryGuild {
   tag: string | null;
 }
 
+export type NitroTypeName = 'None' | 'Nitro Classic' | 'Nitro' | 'Nitro Basic';
+
+export interface NitroTenureMilestone {
+  months: number;
+  badgeName: string;
+  assetId: string;
+}
+
+export interface NitroTenureInfo {
+  nitroType: number | null;
+  nitroName: NitroTypeName;
+  isEvolving: boolean;
+  currentTenureMonths: number | null;
+  currentBadgeMilestone: number | null;
+  currentBadge: NitroTenureMilestone | null;
+  nextBadgeMilestone: number | null;
+  nextBadge: NitroTenureMilestone | null;
+  daysUntilNextBadge: number | null;
+}
+
+export interface PremiumBadge {
+  id: 'premium';
+  asset: string | null;
+  description: string | null;
+}
+
 export interface MutualGuild {
   id: Snowflake;
   nick?: string | null;
@@ -4238,6 +4265,7 @@ export class User extends PartialTextBasedChannel(Base) {
   public readonly createdAt: Date;
   public readonly createdTimestamp: number;
   public collectibles: Collectibles | null;
+  /** @deprecated The discriminator is no longer used by Discord. Use {@link User.username} or {@link User.displayName}. */
   public discriminator: string;
   public pronouns?: string | null;
   public premiumSinceTimestamp: number | null;
@@ -4245,6 +4273,12 @@ export class User extends PartialTextBasedChannel(Base) {
   public premiumGuildSinceTimestamp: number | null;
   public readonly premiumGuildSince: Date | null;
   public premiumType: number | null;
+  public premiumBadge: PremiumBadge | null;
+  public readonly nitroName: NitroTypeName;
+  public readonly currentTenureMonths: number | null;
+  public readonly nextBadgeMilestone: number | null;
+  public readonly daysUntilNextBadge: number | null;
+  public readonly nitroTenure: NitroTenureInfo;
   public legacyUsername: string | null;
   public connectedAccounts: ConnectedAccount[] | null;
   public mutualGroups: GroupDMChannel[] | null;
@@ -4261,6 +4295,7 @@ export class User extends PartialTextBasedChannel(Base) {
   public id: Snowflake;
   public readonly partial: false;
   public system: boolean;
+  /** @deprecated Legacy discriminator tags are deprecated by Discord. Use {@link User.displayName} or {@link User.username}. */
   public readonly tag: string;
   public username: string;
   public readonly note: string | undefined;
@@ -4602,6 +4637,7 @@ export class WidgetMember extends Base {
   private constructor(client: Client, data: RawWidgetMemberData);
   public id: string;
   public username: string;
+  /** @deprecated The discriminator is no longer used by Discord. Use `username` or `displayName` instead. */
   public discriminator: string;
   public avatar: string | null;
   public status: PresenceStatus;

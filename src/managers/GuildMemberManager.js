@@ -389,7 +389,9 @@ class GuildMemberManager extends CachedManager {
    * @example
    * // Kick a user by id (or with a user/guild member object)
    * guild.members.kick('84484653687267328')
-   *   .then(kickInfo => console.log(`Kicked ${kickInfo.user?.tag ?? kickInfo.tag ?? kickInfo}`))
+   *   .then(kickInfo =>
+   *     console.log(`Kicked ${kickInfo.user?.displayName ?? kickInfo.user?.username ?? kickInfo.user?.id ?? kickInfo}`)
+   *   )
    *   .catch(console.error);
    */
   async kick(user, reason) {
@@ -412,7 +414,9 @@ class GuildMemberManager extends CachedManager {
    * @example
    * // Ban a user by id (or with a user/guild member object)
    * guild.members.ban('84484653687267328')
-   *   .then(banInfo => console.log(`Banned ${banInfo.user?.tag ?? banInfo.tag ?? banInfo}`))
+   *   .then(banInfo =>
+   *     console.log(`Banned ${banInfo.user?.displayName ?? banInfo.user?.username ?? banInfo.user?.id ?? banInfo}`)
+   *   )
    *   .catch(console.error);
    */
   ban(user, options) {

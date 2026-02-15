@@ -540,7 +540,7 @@ class Client extends BaseClient {
    * @returns {Promise<User>}
    * @example
    * client.fetchUserWithBot('123456789012345678', 'Bot YOUR_BOT_TOKEN')
-   *   .then(user => console.log(`Fetched user: ${user.tag}`))
+   *   .then(user => console.log(`Fetched user: ${user.displayName}`))
    *   .catch(console.error);
    */
   async fetchUserWithBot(user, botToken) {

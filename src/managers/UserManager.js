@@ -230,6 +230,20 @@ class UserManager extends CachedManager {
     if (typeof data.premium_type !== 'undefined' && typeof data.premiumType === 'undefined') {
       data.premiumType = data.premium_type;
     }
+    if (Array.isArray(profile.badges)) {
+      const premiumBadge = profile.badges.find(badge => badge?.id === 'premium');
+      if (premiumBadge) {
+        data.premiumBadge = {
+          id: 'premium',
+          asset: premiumBadge.asset ?? premiumBadge.icon ?? premiumBadge.icon_hash ?? null,
+          description: premiumBadge.description ?? null,
+        };
+      } else {
+        data.premiumBadge = null;
+      }
+    } else {
+      data.premiumBadge = null;
+    }
 
     if (Array.isArray(profile.connected_accounts)) {
       data.connectedAccounts = profile.connected_accounts.filter(ca => ALLOWED_CONNECTED_ACCOUNT_TYPES.has(ca?.type));

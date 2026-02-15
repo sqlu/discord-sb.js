@@ -40,7 +40,8 @@
 - Mutual insights via `client.users.fetch(id)`: `user.mutualGuilds`, `user.mutualGuildsCount`, `user.mutualFriendsCount`, `user.mutualGroups`, `user.mutualGroupsCount`.
 - Identity fields: `user.legacyUsername` alongside the new handle.
 - Connected accounts: `user.connectedAccounts` filtered to supported providers (Spotify, GitHub, Steam, etc.).
-- Profile extras on fetch: `user.bio`, `user.pronouns`, `user.banner`, `user.accentColor`, `user.premiumType`, `user.premiumSince`, `user.premiumGuildSince`.
+- Profile extras on fetch: `user.bio`, `user.pronouns`, `user.banner`, `user.accentColor`, `user.premiumType`, `user.premiumSince`, `user.premiumGuildSince`, `user.premiumBadge`.
+- Nitro tenure helpers: `user.nitroName`, `user.currentTenureMonths`, `user.nextBadgeMilestone`, `user.daysUntilNextBadge`, `user.nitroTenure`.
 
 ### Guild Management
 - `guild.mute(options?)` - Mute a guild completely (suppress all notifications)

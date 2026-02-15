@@ -31,6 +31,7 @@ class WidgetMember extends Base {
     /**
      * The discriminator of the member.
      * @type {string}
+     * @deprecated The discriminator is no longer used by Discord. Use `username` or `displayName` instead.
      */
     this.discriminator = data.discriminator;
 
