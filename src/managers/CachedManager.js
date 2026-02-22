@@ -51,6 +51,7 @@ class CachedManager extends DataManager {
   }
 
   _add(data, cache = true, { id, extras = [] } = {}) {
+    if (data == null) return null;
     const entryId = id ?? data.id;
     const existing = this.cache.get(entryId);
     if (existing) {

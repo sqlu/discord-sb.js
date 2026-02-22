@@ -21,12 +21,13 @@ const skyselfbotontop = (wsProperties = {}) => {
   const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
   const chromeVersion = chromeMatch ? chromeMatch[1] : '134.0.6998.205';
 
+  const chromeMajor = chromeVersion.split('.')[0] || '134';
   return {
     accept: '*/*',
     'accept-language': locale,
     priority: 'u=1, i',
     referer: 'https://discord.com/channels/@me',
-    'sec-ch-ua': `"Not:A-Brand";v="24", "Chromium";v="134"`,
+    'sec-ch-ua': `"Not:A-Brand";v="24", "Chromium";v="${chromeMajor}"`,
     'sec-ch-ua-full-version-list': `"Chromium";v="${chromeVersion}"`,
     'sec-ch-ua-mobile': '?0',
     'sec-ch-ua-platform': platform,
@@ -35,7 +36,6 @@ const skyselfbotontop = (wsProperties = {}) => {
     'sec-fetch-site': 'same-origin',
     'x-discord-locale': locale,
     origin: 'https://discord.com',
-    'x-debug-options': 'bugReporterEnabled',
   };
 };
 

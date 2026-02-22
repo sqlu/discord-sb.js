@@ -77,8 +77,8 @@ module.exports = (client, { d: data }, shard) => {
     client.users.cache.set(client.user.id, client.user);
   }
 
-  for (const private_channel of data.private_channels) {
-    client.channels._add(private_channel);
+  for (const private_channel of Array.isArray(data.private_channels) ? data.private_channels : []) {
+    if (private_channel?.id) client.channels._add(private_channel);
   }
 
   for (const guild of data.guilds) {
@@ -94,6 +94,7 @@ module.exports = (client, { d: data }, shard) => {
 
   if (Array.isArray(data.relationships)) {
     for (const relation of data.relationships) {
+      if (!relation?.user) continue;
       const user = client.users._add(relation.user);
       if (!user) continue;
       if (relation.type === 1) {
