@@ -237,6 +237,9 @@ class WebSocketShard extends EventEmitter {
      * @private
      */
     Object.defineProperty(this, 'connectedAt', { value: 0, writable: true });
+
+    this._timeSpentSessionInterval = null;
+    this._timeSpentSessionInitTimestamp = null;
   }
 
   /**
@@ -504,7 +507,16 @@ class WebSocketShard extends EventEmitter {
         this.status = Status.WAITING_FOR_GUILDS;
         this.debug(`[READY] Session ${this.sessionId} | Resume url ${this.resumeURL}.`);
         this.lastHeartbeatAcked = true;
+        this.sendUpdateTimeSpentSessionId();
         this.sendHeartbeat('ReadyHeartbeat');
+        if (!this._timeSpentSessionInterval) {
+          this._timeSpentSessionInterval = setInterval(() => {
+            if (this.connection?.readyState === WebSocket.OPEN) {
+              this.sendUpdateTimeSpentSessionId();
+              this.sendHeartbeat('TimeSpentSessionHeartbeat');
+            }
+          }, 30 * 60 * 1000).unref();
+        }
         break;
       case WSEvents.RESUMED: {
         /**
@@ -517,6 +529,7 @@ class WebSocketShard extends EventEmitter {
         const replayed = packet.s - this.closeSequence;
         this.debug(`[RESUMED] Session ${this.sessionId} | Replayed ${replayed} events.`);
         this.lastHeartbeatAcked = true;
+        this.sendUpdateTimeSpentSessionId();
         this.sendHeartbeat('ResumeHeartbeat');
         break;
       }
@@ -714,6 +727,10 @@ class WebSocketShard extends EventEmitter {
         clearInterval(this.heartbeatInterval);
         this.heartbeatInterval = null;
       }
+      if (this._timeSpentSessionInterval) {
+        clearInterval(this._timeSpentSessionInterval);
+        this._timeSpentSessionInterval = null;
+      }
       return;
     }
     this.debug(`Setting a heartbeat interval for ${time}ms.`);
@@ -758,7 +775,41 @@ class WebSocketShard extends EventEmitter {
     this.debug(`[${tag}] Sending a heartbeat.`);
     this.lastHeartbeatAcked = false;
     this.lastPingTimestamp = Date.now();
-    this.send({ op: Opcodes.HEARTBEAT, d: this.sequence }, true);
+
+    const useQos = this.manager.client.options.ws?.useQosHeartbeat;
+    if (useQos) {
+      this.send(
+        {
+          op: Opcodes.QOS_HEARTBEAT,
+          d: {
+            seq: this.sequence,
+            qos: { ver: 27, active: true, reasons: ['foregrounded'] },
+          },
+        },
+        true,
+      );
+    } else {
+      this.send({ op: Opcodes.HEARTBEAT, d: this.sequence }, true);
+    }
+  }
+
+  sendUpdateTimeSpentSessionId() {
+    const props = this.manager.client.options.ws?.properties;
+    if (!props?.client_heartbeat_session_id || !props?.client_launch_id) return;
+
+    this._timeSpentSessionInitTimestamp ??= Date.now();
+    this.send(
+      {
+        op: Opcodes.UPDATE_TIME_SPENT_SESSION_ID,
+        d: {
+          initialization_timestamp: this._timeSpentSessionInitTimestamp,
+          session_id: props.client_heartbeat_session_id,
+          client_launch_id: props.client_launch_id,
+        },
+      },
+      true,
+    );
+    this.debug('[UPDATE_TIME_SPENT] Sent Opcode 41.');
   }
 
   /**
@@ -817,6 +868,9 @@ class WebSocketShard extends EventEmitter {
 
     delete d.version;
     delete d.agent;
+
+    const installationId = client.rest.getInstallationId?.();
+    if (installationId) d.installation_id = installationId;
 
     this.debug(`[IDENTIFY] Shard ${this.id}`);
     this.send({ op: Opcodes.IDENTIFY, d }, true);

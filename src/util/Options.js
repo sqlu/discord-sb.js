@@ -190,7 +190,7 @@ class Options extends null {
       presence: { status: 'online', since: 0, activities: [], afk: true },
       sweepers: {},
       ws: {
-        capabilities: 0, // https://discord-userdoccers.vercel.app/topics/gateway#gateway-capabilities
+        capabilities: (1 << 2) | (1 << 3) | (1 << 4) | (1 << 10),
         properties: {
           os: 'Windows',
           browser: 'Discord Client',
@@ -213,6 +213,7 @@ class Options extends null {
           client_app_state: 'focused',
         },
         compress: false,
+        useQosHeartbeat: true,
         client_state: {
           guild_versions: {},
         },

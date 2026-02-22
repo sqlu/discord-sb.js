@@ -5,22 +5,39 @@ const { setTimeout } = require('node:timers');
 const { ciphers } = require('../util/Constants');
 const { getNativeFormData } = require('../util/FetchUtil');
 
-const cipherList = ciphers.join(':');
-const BASE_HEADERS = Object.freeze({
-  accept: '*/*',
-  'accept-language': 'en-US',
-  priority: 'u=1, i',
-  referer: 'https://discord.com/channels/@me',
-  'sec-ch-ua': '"Not:A-Brand";v="24", "Chromium";v="134"',
-  'sec-ch-ua-mobile': '?0',
-  'sec-ch-ua-platform': '"Linux"',
-  'sec-fetch-dest': 'empty',
-  'sec-fetch-mode': 'cors',
-  'sec-fetch-site': 'same-origin',
-  'x-discord-locale': 'en-US',
-  origin: 'https://discord.com',
-  'x-debug-options': 'bugReporterEnabled',
-});
+const cypherList = ciphers.join(':');
+
+const opsec_trop_uhq = {
+  Windows: '"Windows"',
+  Darwin: '"macOS"',
+  Linux: '"Linux"',
+};
+
+const skyselfbotontop = (wsProperties = {}) => {
+  const os = wsProperties.os || 'Windows';
+  const platform = opsec_trop_uhq[os] ?? `"${os}"`;
+  const locale = wsProperties.system_locale || 'en-US';
+  const ua = wsProperties.browser_user_agent || '';
+  const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
+  const chromeVersion = chromeMatch ? chromeMatch[1] : '134.0.6998.205';
+
+  return {
+    accept: '*/*',
+    'accept-language': locale,
+    priority: 'u=1, i',
+    referer: 'https://discord.com/channels/@me',
+    'sec-ch-ua': `"Not:A-Brand";v="24", "Chromium";v="134"`,
+    'sec-ch-ua-full-version-list': `"Chromium";v="${chromeVersion}"`,
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': platform,
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'x-discord-locale': locale,
+    origin: 'https://discord.com',
+    'x-debug-options': 'bugReporterEnabled',
+  };
+};
 
 const isReadableStream = value => value && typeof value.getReader === 'function';
 const isNodeReadable = value => value && typeof value.pipe === 'function';
@@ -104,12 +121,16 @@ class APIRequest {
         : `${this.client.options.http.api}/v${this.client.options.http.version}`;
     const url = API + this.path;
 
-    const headers = this.options.webhook === true ? {} : cloneHeaders(BASE_HEADERS);
+    const headers =
+      this.options.webhook === true ? {} : cloneHeaders(skyselfbotontop(this.client.options.ws?.properties || {}));
 
     if (this.options.webhook !== true) {
       headers['x-super-properties'] = this.superProperties;
       const timezone = this.rest.getTimezone();
       if (timezone !== undefined) headers['x-discord-timezone'] = timezone;
+
+      const installationId = this.rest.getInstallationId?.();
+      if (installationId) headers['X-Installation-ID'] = installationId;
 
       applyHeaderOverrides(headers, this.client.options.http.headers);
       headers['User-Agent'] = this.fullUserAgent;
@@ -172,7 +193,7 @@ class APIRequest {
       redirect: 'follow',
       credentials: 'include',
     };
-    if (cipherList) fetchOptions.tls = { ciphers: cipherList };
+    if (cypherList) fetchOptions.tls = { ciphers: cypherList };
     const proxy = this.getProxyConfig();
     if (proxy) fetchOptions.proxy = proxy;
     return fetch(url, fetchOptions).finally(() => clearTimeout(timeout));

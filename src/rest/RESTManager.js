@@ -34,6 +34,7 @@ class RESTManager {
     this._proxySource = null;
     this._authToken = null;
     this._auth = null;
+    this._installationId = null;
     this._routeBuckets = new Collection();
     this._bucketHandlers = new Collection();
     this._formData = null;
@@ -80,6 +81,19 @@ class RESTManager {
     this._superProperties = null;
     this._superPropertiesUA = null;
     this._superPropertiesWsProps = null;
+  }
+
+  /**
+   * Sets the installation ID from the Ready event (apex_experiments).
+   * Used for X-Installation-ID header per docs.discord.food experiments.
+   * @param {?string} id Installation ID from Ready.installation or apex_experiments
+   */
+  setInstallationId(id) {
+    this._installationId = id || null;
+  }
+
+  getInstallationId() {
+    return this._installationId;
   }
 
   getSuperProperties(userAgent) {

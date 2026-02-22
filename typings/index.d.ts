@@ -8707,6 +8707,7 @@ export interface WebSocketOptions {
   agent?: Omit<AgentOptions, 'keepAlive'>;
   compress?: boolean;
   properties?: WebSocketProperties;
+  useQosHeartbeat?: boolean;
 }
 
 export interface WebSocketProperties {

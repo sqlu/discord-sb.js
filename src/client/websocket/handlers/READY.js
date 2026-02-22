@@ -119,6 +119,11 @@ module.exports = (client, { d: data }, shard) => {
   // Todo: data.auth_session_id_hash
   client.sessions.currentSessionIdHash = data.auth_session_id_hash;
 
+  const installationId = data.apex_experiments?.installation ?? data.installation;
+  if (installationId && typeof client.rest.setInstallationId === 'function') {
+    client.rest.setInstallationId(installationId);
+  }
+
   if (data.guilds.length) {
     for (const subscriptions of buildSubscriptionChunks(data.guilds)) {
       shard.send({
