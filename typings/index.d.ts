@@ -7678,6 +7678,8 @@ export type ProxyAgentOptions =
 
 export interface HTTPOptions {
   agent?: ProxyAgentOptions;
+  tlsFingerprint?: boolean;
+  fetch?: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
   api?: string;
   version?: number;
   host?: string;

@@ -13,6 +13,7 @@ class GatewaySendScheduler {
     this._lastRefill = Date.now();
     this._timer = null;
     this._importantStreak = 0;
+    this._processing = false;
 
     this.importantQueue = new FastQueue();
     this.normalQueue = new FastQueue();
@@ -49,23 +50,37 @@ class GatewaySendScheduler {
     this._tokens = this.capacity;
     this._lastRefill = Date.now();
     this._importantStreak = 0;
+    this._processing = false;
   }
 
-  process() {
-    this._refill(Date.now());
+  async process() {
+    if (this._processing) return;
+    this._processing = true;
 
-    while (this._tokens >= 1 && this.length > 0) {
-      const next = this._dequeue();
-      if (typeof next === 'undefined') break;
-      this.shard._send(next);
-      this._tokens -= 1;
-    }
+    try {
+      while (true) {
+        this._refill(Date.now());
 
-    if (this.length > 0) {
-      this._schedule();
-    } else if (this._timer) {
-      clearTimeout(this._timer);
-      this._timer = null;
+        if (this._tokens < 1 || this.length === 0) break;
+
+        const next = this._dequeue();
+        if (typeof next === 'undefined') break;
+
+        const jitterDelay = Math.floor(Math.random() * 101) + 50;
+        await new Promise(resolve => setTimeout(resolve, jitterDelay));
+
+        this.shard._send(next);
+        this._tokens -= 1;
+      }
+
+      if (this.length > 0) {
+        this._schedule();
+      } else if (this._timer) {
+        clearTimeout(this._timer);
+        this._timer = null;
+      }
+    } finally {
+      this._processing = false;
     }
   }
 

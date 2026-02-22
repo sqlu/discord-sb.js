@@ -7,6 +7,22 @@ if (!isBun) {
 }
 
 const getNativeFetch = () => globalThis.fetch.bind(globalThis);
+
+let _impitInstance = null;
+const getImpitFetch = (options = {}) => {
+  if (_impitInstance) return _impitInstance.fetch.bind(_impitInstance);
+  try {
+    const { Impit } = require('impit');
+    _impitInstance = new Impit({
+      browser: options.browser ?? 'chrome',
+      proxyUrl: options.proxyUrl ?? undefined,
+      ignoreTlsErrors: options.ignoreTlsErrors ?? false,
+    });
+    return _impitInstance.fetch.bind(_impitInstance);
+  } catch (e) {
+    return null;
+  }
+};
 const getNativeFormData = () => globalThis.FormData;
 
 const createCookieJar = () => new Bun.CookieMap();
@@ -52,6 +68,7 @@ const wrapFetchWithCookies =
 module.exports = {
   isBun,
   getNativeFetch,
+  getImpitFetch,
   getNativeFormData,
   createCookieJar,
   wrapFetchWithCookies,

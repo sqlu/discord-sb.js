@@ -21,7 +21,17 @@ class RESTManager {
     this.globalReset = null;
     this.globalDelay = null;
     this.cookieJar = FetchUtil.createCookieJar();
-    this.fetch = FetchUtil.wrapFetchWithCookies(FetchUtil.getNativeFetch(), this.cookieJar);
+    let baseFetch;
+    if (typeof client.options.http?.fetch === 'function') {
+      baseFetch = client.options.http.fetch;
+    } else if (client.options.http?.tlsFingerprint) {
+      const proxyConfig = this.getProxyConfig();
+      const proxyUrl = typeof proxyConfig === 'string' ? proxyConfig : proxyConfig?.url;
+      baseFetch = FetchUtil.getImpitFetch({ proxyUrl }) ?? FetchUtil.getNativeFetch();
+    } else {
+      baseFetch = FetchUtil.getNativeFetch();
+    }
+    this.fetch = FetchUtil.wrapFetchWithCookies(baseFetch, this.cookieJar);
 
     this._api = routeBuilder(this);
     this._cdn = null;
@@ -35,6 +45,7 @@ class RESTManager {
     this._authToken = null;
     this._auth = null;
     this._installationId = null;
+    this._fingerprint = null;
     this._routeBuckets = new Collection();
     this._bucketHandlers = new Collection();
     this._formData = null;
@@ -94,6 +105,14 @@ class RESTManager {
 
   getInstallationId() {
     return this._installationId;
+  }
+
+  setFingerprint(fingerprint) {
+    this._fingerprint = fingerprint || null;
+  }
+
+  getFingerprint() {
+    return this._fingerprint ?? this.client.options.fingerprint;
   }
 
   getSuperProperties(userAgent) {

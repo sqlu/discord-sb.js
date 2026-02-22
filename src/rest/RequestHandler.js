@@ -11,18 +11,6 @@ const {
 } = require('../util/Constants');
 const { hasListener } = require('../util/ListenerUtil');
 
-const captchaMessage = [
-  'incorrect-captcha',
-  'response-already-used',
-  'captcha-required',
-  'invalid-input-response',
-  'invalid-response',
-  'You need to update your app',
-  'response-already-used-error',
-  'rqkey-mismatch',
-  'sitekey-secret-mismatch',
-];
-
 function parseResponse(res) {
   if (res.headers.get('content-type')?.startsWith('application/json')) return res.json();
   return res.arrayBuffer();
@@ -148,6 +136,11 @@ class RequestHandler {
   }
 
   async execute(request, captchaKey, captchaToken) {
+    if (request.options.delay) {
+      const initialDelay = Math.floor(Math.random() * request.options.delay) + 50;
+      await sleep(initialDelay);
+    }
+
     const run = async (activeCaptchaKey, activeCaptchaToken) => {
       const hasDebugListener = hasListener(this.manager.client, DEBUG);
       const hasRateLimitListener = hasListener(this.manager.client, RATE_LIMIT);
@@ -425,7 +418,8 @@ class RequestHandler {
             await this.manager.coordinator.sleepBackoff(429, Math.max(request.retries, 1));
           } else {
             const fallback = Math.min(1_500, 125 * 2 ** Math.min(Math.max(request.retries, 1), 5));
-            await sleep(fallback);
+            const jitter = Math.floor(Math.random() * 201);
+            await sleep(fallback + jitter);
           }
           request.retries++;
           return run();
@@ -437,10 +431,10 @@ class RequestHandler {
           data = await parseResponse(res);
           // Captcha
           if (
-            data?.captcha_service &&
-            typeof this.manager.client.options.captchaSolver == 'function' &&
-            request.retries < this.manager.client.options.captchaRetryLimit &&
-            captchaMessage.some(s => data.captcha_key[0].includes(s))
+            res.status === 400 &&
+            data?.captcha_key &&
+            typeof this.manager.client.options.captchaSolver === 'function' &&
+            request.retries < this.manager.client.options.captchaRetryLimit
           ) {
             // Retry the request after a captcha is solved
             if (hasDebugListener) {

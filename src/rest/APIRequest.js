@@ -135,7 +135,15 @@ class APIRequest {
       applyHeaderOverrides(headers, this.client.options.http.headers);
       headers['User-Agent'] = this.fullUserAgent;
 
-      if (this.options.auth !== false) headers.Authorization = this.rest.getAuth();
+      if (this.options.auth !== false) {
+        headers.Authorization = this.rest.getAuth();
+      } else {
+        const fingerprint = this.rest.getFingerprint?.();
+        if (fingerprint) {
+          headers['x-fingerprint'] = fingerprint;
+        }
+      }
+
       if (this.options.reason) headers['X-Audit-Log-Reason'] = encodeURIComponent(this.options.reason);
       applyHeaderOverrides(headers, this.options.headers);
     } else {

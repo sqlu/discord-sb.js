@@ -139,10 +139,16 @@ const Intents = require('./Intents');
  */
 
 /**
- * HTTP options
+ * HTTP options.
+ * The module is designed to be self-contained: by default it uses Bun's native fetch and WebSocket
+ * without external HTTP clients or binaries. All endpoints are configurable.
  * @typedef {Object} HTTPOptions
  * @property {number} [version=9] API version to use
  * @property {ProxyAgentOptions} [agent={}] Proxy options for Bun fetch
+ * @property {Function} [fetch] Optional fetch override. Must match the standard fetch(url, options) signature.
+ * If not provided, uses Bun's native fetch. Use this to inject a custom implementation (e.g. TLS-impersonating
+ * fetch) without adding dependencies to the package.
+ * @property {boolean} [tlsFingerprint=false] Use Impit for TLS fingerprint impersonation (Chrome-like ClientHello).
  * @property {string} [api='https://discord.com/api'] Base URL of the API
  * @property {string} [cdn='https://cdn.discordapp.com'] Base URL of the CDN
  * @property {string} [invite='https://discord.gg'] Base URL of invites
@@ -222,6 +228,7 @@ class Options extends null {
       },
       http: {
         agent: {},
+        tlsFingerprint: false,
         headers: {
           'User-Agent': UserAgent,
         },

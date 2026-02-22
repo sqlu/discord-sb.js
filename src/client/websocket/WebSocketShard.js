@@ -864,6 +864,17 @@ class WebSocketShard extends EventEmitter {
     const d = {
       ...client.options.ws,
       token: client.token,
+      large_threshold: 250,
+      presence: {
+        status: 'unknown',
+        since: 0,
+        activities: [],
+        afk: false,
+      },
+      client_state: {
+        ...client.options.ws.client_state,
+        api_code_version: 0,
+      },
     };
 
     delete d.version;
