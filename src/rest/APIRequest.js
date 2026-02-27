@@ -7,34 +7,21 @@ const { getNativeFormData } = require('../util/FetchUtil');
 
 const cypherList = ciphers.join(':');
 
-const opsec_trop_uhq = {
-  Windows: '"Windows"',
-  Darwin: '"macOS"',
-  Linux: '"Linux"',
-};
-
 const skyselfbotontop = (wsProperties = {}) => {
-  const os = wsProperties.os || 'Windows';
-  const platform = opsec_trop_uhq[os] ?? `"${os}"`;
   const locale = wsProperties.system_locale || 'en-US';
-  const ua = wsProperties.browser_user_agent || '';
-  const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
-  const chromeVersion = chromeMatch ? chromeMatch[1] : '134.0.6998.205';
-
-  const chromeMajor = chromeVersion.split('.')[0] || '134';
   return {
     accept: '*/*',
     'accept-language': locale,
     priority: 'u=1, i',
+    authority: 'discord.com',
     referer: 'https://discord.com/channels/@me',
-    'sec-ch-ua': `"Not:A-Brand";v="24", "Chromium";v="${chromeMajor}"`,
-    'sec-ch-ua-full-version-list': `"Chromium";v="${chromeVersion}"`,
+    'sec-ch-ua': '"Not:A-Brand";v="24", "Chromium";v="134"',
     'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': platform,
+    'sec-ch-ua-platform': '"Windows"',
     'sec-fetch-dest': 'empty',
     'sec-fetch-mode': 'cors',
     'sec-fetch-site': 'same-origin',
-    'x-discord-locale': locale,
+    'X-Discord-Locale': locale,
     origin: 'https://discord.com',
   };
 };
@@ -126,22 +113,21 @@ class APIRequest {
 
     if (this.options.webhook !== true) {
       headers['x-super-properties'] = this.superProperties;
-      const timezone = this.rest.getTimezone();
-      if (timezone !== undefined) headers['x-discord-timezone'] = timezone;
+      headers['X-Super-Properties'] = this.superProperties;
 
-      const installationId = this.rest.getInstallationId?.();
-      if (installationId) headers['X-Installation-ID'] = installationId;
+      const timezone = this.rest.getTimezone();
+      if (timezone !== undefined) headers['X-Discord-Timezone'] = timezone;
 
       applyHeaderOverrides(headers, this.client.options.http.headers);
       headers['User-Agent'] = this.fullUserAgent;
 
       if (this.options.auth !== false) {
         headers.Authorization = this.rest.getAuth();
-      } else {
-        const fingerprint = this.rest.getFingerprint?.();
-        if (fingerprint) {
-          headers['x-fingerprint'] = fingerprint;
-        }
+      }
+
+      const fingerprint = this.rest.getFingerprint?.();
+      if (fingerprint) {
+        headers.fingerprint = fingerprint;
       }
 
       if (this.options.reason) headers['X-Audit-Log-Reason'] = encodeURIComponent(this.options.reason);

@@ -288,13 +288,20 @@ class GuildManager extends CachedManager {
     const id = this.resolveId(options) ?? this.resolveId(options.guild);
 
     if (id) {
+      const existing = this.cache.get(id);
       if (!options.force) {
-        const existing = this.cache.get(id);
-        if (existing) return existing;
+        const hasName = typeof existing?.name === 'string' && existing.name.length > 0;
+        if (existing && hasName) return existing;
       }
 
       const data = await this.client.api.guilds(id).get({ query: { with_counts: options.withCounts ?? true } });
-      return this._add(data, options.cache);
+      const guild = this._add(data, options.cache);
+
+      if ((!guild?.name || guild.name.length === 0) && typeof existing?.name === 'string' && existing.name.length > 0) {
+        guild.name = existing.name;
+      }
+
+      return guild;
     }
 
     const data = await this.client.api.users('@me').guilds.get({ query: options });

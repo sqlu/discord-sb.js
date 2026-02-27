@@ -41,6 +41,28 @@ const Intents = require('../util/Intents');
 const DiscordAuthWebsocket = require('../util/RemoteAuth');
 const Sweepers = require('../util/Sweepers');
 const TOKEN_PREFIX_REGEX = /^(Bot|Bearer)\s*/i;
+const INVITE_ROUTE_FALLBACK_STATUSES = new Set([404, 405, 501]);
+const INVITE_NOT_FOUND_API_CODE = 10006;
+
+function getRequestStatus(error) {
+  if (typeof error?.httpStatus === 'number') return error.httpStatus;
+  if (typeof error?.code === 'number') return error.code;
+  return null;
+}
+
+function shouldFallbackToLegacyInviteRoute(error, inviteCode) {
+  if (!error) return false;
+
+  if (error.name === 'DiscordAPIError' && error.code === INVITE_NOT_FOUND_API_CODE) {
+    return false;
+  }
+
+  const status = getRequestStatus(error);
+  if (!INVITE_ROUTE_FALLBACK_STATUSES.has(status)) return false;
+
+  if (typeof error.path !== 'string' || error.path.length === 0) return true;
+  return error.path.startsWith(`/invites/${inviteCode}`);
+}
 
 /**
  * The main hub for interacting with the Discord API, and the starting point for any bot.
@@ -443,10 +465,16 @@ class Client extends BaseClient {
    */
   async fetchInvite(invite, options) {
     const code = DataResolver.resolveInviteCode(invite);
-    const data = await this.api.invites(code).get({
-      query: { with_counts: true, guild_scheduled_event_id: options?.guildScheduledEventId },
-    });
-    return new Invite(this, data);
+    const query = { with_counts: true, guild_scheduled_event_id: options?.guildScheduledEventId };
+
+    try {
+      const data = await this.api.invites(code).get({ query });
+      return new Invite(this, data);
+    } catch (error) {
+      if (!shouldFallbackToLegacyInviteRoute(error, code)) throw error;
+      const data = await this.api.invite(code).get({ query });
+      return new Invite(this, data);
+    }
   }
 
   /**
